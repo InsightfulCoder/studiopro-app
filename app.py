@@ -14,12 +14,12 @@ app.secret_key = "studiopro_pro_secret_key"
 
 # --- 1. CONFIGURATION ---
 
-# 🧠 BRAIN: Hugging Face (Real AI)
-# I have already inserted your key below!
+# 🧠 BRAIN: Hugging Face (Stable Diffusion v1.5 - Most Reliable Free Model)
+# Your key is already here:
 HUGGINGFACE_API_KEY = "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"
 
 # ☁️ STORAGE: Cloudinary
-# ⚠️ YOU MUST PASTE YOUR CLOUDINARY KEYS HERE ⚠️
+# ⚠️ PASTE YOUR CLOUDINARY KEYS HERE ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -37,31 +37,36 @@ db = SQLAlchemy(app)
 
 # --- 2. AI FUNCTION (HUGGING FACE) ---
 def query_huggingface(file_stream, prompt):
-    # UPDATED URL: Using 'router' instead of 'api-inference'
-    API_URL = "https://router.huggingface.co/models/timbrooks/instruct-pix2pix"
+    # SWITCHED TO: Stable Diffusion v1.5 (More reliable on free tier)
+    # Using the new 'router' URL as requested by the previous error
+    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    # Read file and convert to Base64 (required for this API)
+    # Read file and convert to Base64
     file_stream.seek(0)
     b64_img = base64.b64encode(file_stream.read()).decode('utf-8')
     
+    # Stable Diffusion Payload
     payload = {
         "inputs": b64_img,
         "parameters": {
             "prompt": prompt,
-            "image_guidance_scale": 1.5,
-            "num_inference_steps": 20
+            "strength": 0.75, # How much to change the image (0-1)
+            "guidance_scale": 7.5
         }
     }
     
     response = requests.post(API_URL, headers=headers, json=payload)
     
-    # Cold Start Handler
+    # Error Handling
     if response.status_code == 503:
         raise Exception("AI is warming up... please wait 30 seconds and try again!")
         
+    if response.status_code == 404:
+        raise Exception("Model not found. The API might be down momentarily.")
+
     if response.status_code != 200:
-        raise Exception(f"HuggingFace Error: {response.text}")
+        raise Exception(f"HuggingFace Error {response.status_code}: {response.text}")
 
     return response.content
 
@@ -104,11 +109,12 @@ def process():
 
     try:
         # Define AI Prompts
-        prompt_text = "make it look like a cartoon"
-        if style == 'cyberpunk': prompt_text = "make it look like a cyberpunk city, neon lights"
-        elif style == 'anime': prompt_text = "make it look like a studio ghibli anime"
-        elif style == 'pencil': prompt_text = "make it look like a pencil sketch"
-        elif style == 'hdr': prompt_text = "make it look like high definition photography, realistic"
+        # Tweaked specifically for Stable Diffusion
+        prompt_text = "cartoon style, illustration, vibrant colors"
+        if style == 'cyberpunk': prompt_text = "cyberpunk city style, neon lights, futuristic, highly detailed"
+        elif style == 'anime': prompt_text = "studio ghibli anime style, masterpiece, vibrant"
+        elif style == 'pencil': prompt_text = "pencil sketch, black and white, architectural drawing"
+        elif style == 'hdr': prompt_text = "hdr photography, 8k resolution, realistic, sharp focus"
 
         # 1. Send to Hugging Face
         ai_image_bytes = query_huggingface(file, prompt_text)
