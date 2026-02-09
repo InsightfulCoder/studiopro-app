@@ -37,8 +37,8 @@ db = SQLAlchemy(app)
 
 # --- 2. AI FUNCTION (HUGGING FACE) ---
 def query_huggingface(file_stream, prompt):
-    # API URL for "Instruct Pix2Pix" (Best for styling images)
-    API_URL = "https://api-inference.huggingface.co/models/timbrooks/instruct-pix2pix"
+    # UPDATED URL: Using 'router' instead of 'api-inference'
+    API_URL = "https://router.huggingface.co/models/timbrooks/instruct-pix2pix"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
     # Read file and convert to Base64 (required for this API)
