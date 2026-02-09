@@ -21,24 +21,9 @@
                     {% if logged_in %}👤{% else %}🔒{% endif %}
                 </div>
                 <div class="user-info">
-                    <span class="badge">{% if is_pro %}PRO MEMBER{% else %}GUEST{% endif %}</span>
                     <p>{% if logged_in %}{{ username }}{% else %}Secure Sign In{% endif %}</p>
                 </div>
-                <div class="arrow">→</div>
             </div>
-
-            {% if not is_pro %}
-            <div class="credits-box">
-                <div class="credit-header">
-                    <span>Trial Credits</span>
-                    <span>{{ uses_left }}/3</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="fill" style="width: 33%;"></div>
-                </div>
-                <p class="subtext">Register to unlock features.</p>
-            </div>
-            {% endif %}
 
             <nav>
                 <a href="#" class="nav-item active">
@@ -88,31 +73,24 @@
                                 <input type="radio" name="style" value="pencil">
                                 <span>✏️ Pencil Sketch</span>
                             </label>
-                            <label class="radio-opt">
-                                <input type="radio" name="style" value="pencil_color">
-                                <span>🖍️ Color Pencil</span>
-                            </label>
                             <label class="radio-opt premium">
                                 <input type="radio" name="style" value="anime">
                                 <span>✨ Ghibli Anime</span>
-                                {% if not is_pro %}🔒{% endif %}
                             </label>
                             <label class="radio-opt premium">
                                 <input type="radio" name="style" value="cyberpunk">
                                 <span>🌆 Cyberpunk</span>
-                                {% if not is_pro %}🔒{% endif %}
                             </label>
                             <label class="radio-opt premium">
                                 <input type="radio" name="style" value="hdr">
                                 <span>📸 HDR Detail</span>
-                                {% if not is_pro %}🔒{% endif %}
                             </label>
                         </div>
                     </div>
 
                     <button class="btn-primary" onclick="generate()">GENERATE ASSET</button>
                     
-                    <a id="dlBtn" href="#" class="btn-download hidden" download="studio_pro_asset.png">
+                    <a id="dlBtn" href="#" class="btn-download hidden" download="studio_pro_asset.png" target="_blank">
                         Download HD Asset
                     </a>
                 </div>
@@ -144,10 +122,13 @@
                 <div class="history-grid">
                     {% for item in history %}
                     <div class="h-card" id="card-{{ item.id }}">
-                        <img src="{{ url_for('static', filename='uploads/' + item.filename) }}">
+                        <img src="{{ item.image_url }}">
                         <div class="h-info">
                             <span>{{ item.style }}</span>
-                            <button onclick="deleteAsset({{ item.id }})">🗑️</button>
+                            <div class="h-actions">
+                                <a href="{{ item.image_url }}" target="_blank" class="btn-icon">⬇️</a>
+                                <button onclick="deleteAsset({{ item.id }})" class="btn-icon delete">🗑️</button>
+                            </div>
                         </div>
                     </div>
                     {% endfor %}
@@ -178,26 +159,6 @@
                 <p class="switch-link" onclick="switchMode('login')">Already have an account? Sign In</p>
             </div>
             <p id="authError" style="color:red; font-size:12px; margin-top:10px;"></p>
-        </div>
-    </div>
-
-    <div id="paymentModal" class="modal hidden">
-        <div class="modal-box payment-box">
-            <div class="pro-badge">PRO</div>
-            <h2>Upgrade to StudioPro</h2>
-            <ul class="features-list">
-                <li>✨ Unlock Anime, Cyberpunk & HDR</li>
-                <li>🚀 Unlimited Generations</li>
-                <li>💾 Cloud Storage for History</li>
-                <li>⚡ Faster Processing Priority</li>
-            </ul>
-            <div class="price">₹499 <span style="font-size:14px; color:#94a3b8">/ lifetime</span></div>
-            
-            <button class="btn-pay" onclick="processMockPayment()">
-                <span id="payText">Complete Purchase</span>
-                <span id="payLoader" class="hidden">Processing...</span>
-            </button>
-            <button class="btn-text" onclick="closePayment()">Maybe Later</button>
         </div>
     </div>
 
