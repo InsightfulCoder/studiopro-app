@@ -13,7 +13,7 @@ app.secret_key = "studiopro_pro_secret_key"
 
 # --- 1. CONFIGURATION ---
 
-# Brain (DeepAI)
+# Brain (DeepAI) - Ensure this matches your dashboard key exactly!
 DEEPAI_API_KEY = "377e9ecf-6443-4f51-b191-f7d3f8b442e7"
 
 # Storage (Cloudinary)
@@ -77,10 +77,13 @@ def process():
         elif style == 'pencil': prompt_text = "pencil sketch, black and white drawing, architectural"
         elif style == 'hdr': prompt_text = "HDR photography, highly detailed, realistic, 8k"
 
-        # Send to DeepAI
+        # --- FIX: Send file with Explicit Filename ---
+        # DeepAI requires the filename to know if it's a JPG or PNG
+        files_payload = {'image': (file.filename, file.read())}
+
         r = requests.post(
             "https://api.deepai.org/api/image-editor",
-            files={'image': file.stream}, 
+            files=files_payload, 
             data={'text': prompt_text},
             headers={'api-key': DEEPAI_API_KEY}
         )
@@ -108,7 +111,12 @@ def process():
                 "style": style
             })
         else:
-            return jsonify({"error": "AI Error"}), 500
+            # --- FIX: Return the REAL error from DeepAI ---
+            # This will tell us if it's "Payment Required" or "Invalid Key"
+            error_msg = result_json.get('err', 'Unknown AI Error')
+            if 'status' in result_json: 
+                error_msg += f" (Status: {result_json['status']})"
+            return jsonify({"error": "AI says: " + str(error_msg)}), 500
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -157,4 +165,3 @@ def mock_payment():
 
 if __name__ == "__main__":
     app.run(debug=True)
-
