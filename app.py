@@ -1,10 +1,11 @@
 import os
 import datetime
-import uuid
+import io
+import base64
+import requests
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-import requests
 import cloudinary
 import cloudinary.uploader
 
@@ -13,17 +14,19 @@ app.secret_key = "studiopro_pro_secret_key"
 
 # --- 1. CONFIGURATION ---
 
-# Brain (DeepAI) - Ensure this matches your dashboard key exactly!
-DEEPAI_API_KEY = "377e9ecf-6443-4f51-b191-f7d3f8b442e7"
+# 🧠 BRAIN: Hugging Face (Real AI)
+# I have already inserted your key below!
+HUGGINGFACE_API_KEY = "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"
 
-# Storage (Cloudinary)
+# ☁️ STORAGE: Cloudinary
+# ⚠️ YOU MUST PASTE YOUR CLOUDINARY KEYS HERE ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
-    api_key = "457977599793717",    # <--- PASTE YOUR REAL API KEY HERE
-    api_secret = "uPtdj1lgu-HvQ2vnmHCgDk1QHu0" # <--- PASTE YOUR REAL API SECRET HERE
+    api_key = "457977599793717",    
+    api_secret = "uPtdj1lgu-HvQ2vnmHCgDk1QHu0" 
 )
 
-# Database (Neon PostgreSQL)
+# 🗄️ DATABASE: Neon
 db_url = "postgresql://neondb_owner:npg_JXnas5ev8AgG@ep-crimson-wind-aillfxxy-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require"
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -32,7 +35,37 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-# --- 2. DATABASE MODELS ---
+# --- 2. AI FUNCTION (HUGGING FACE) ---
+def query_huggingface(file_stream, prompt):
+    # API URL for "Instruct Pix2Pix" (Best for styling images)
+    API_URL = "https://api-inference.huggingface.co/models/timbrooks/instruct-pix2pix"
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+    
+    # Read file and convert to Base64 (required for this API)
+    file_stream.seek(0)
+    b64_img = base64.b64encode(file_stream.read()).decode('utf-8')
+    
+    payload = {
+        "inputs": b64_img,
+        "parameters": {
+            "prompt": prompt,
+            "image_guidance_scale": 1.5,
+            "num_inference_steps": 20
+        }
+    }
+    
+    response = requests.post(API_URL, headers=headers, json=payload)
+    
+    # Cold Start Handler
+    if response.status_code == 503:
+        raise Exception("AI is warming up... please wait 30 seconds and try again!")
+        
+    if response.status_code != 200:
+        raise Exception(f"HuggingFace Error: {response.text}")
+
+    return response.content
+
+# --- 3. DATABASE MODELS ---
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -51,7 +84,7 @@ class ImageHistory(db.Model):
 with app.app_context():
     db.create_all()
 
-# --- 3. ROUTES ---
+# --- 4. ROUTES ---
 @app.route("/")
 def index():
     history = []
@@ -71,52 +104,33 @@ def process():
 
     try:
         # Define AI Prompts
-        prompt_text = "cartoon style, clean lines, vibrant"
-        if style == 'cyberpunk': prompt_text = "cyberpunk style, neon lights, futuristic city, high contrast"
-        elif style == 'anime': prompt_text = "anime style, studio ghibli, vibrant, detailed"
-        elif style == 'pencil': prompt_text = "pencil sketch, black and white drawing, architectural"
-        elif style == 'hdr': prompt_text = "HDR photography, highly detailed, realistic, 8k"
+        prompt_text = "make it look like a cartoon"
+        if style == 'cyberpunk': prompt_text = "make it look like a cyberpunk city, neon lights"
+        elif style == 'anime': prompt_text = "make it look like a studio ghibli anime"
+        elif style == 'pencil': prompt_text = "make it look like a pencil sketch"
+        elif style == 'hdr': prompt_text = "make it look like high definition photography, realistic"
 
-        # --- FIX: Send file with Explicit Filename ---
-        # DeepAI requires the filename to know if it's a JPG or PNG
-        files_payload = {'image': (file.filename, file.read())}
+        # 1. Send to Hugging Face
+        ai_image_bytes = query_huggingface(file, prompt_text)
 
-        r = requests.post(
-            "https://api.deepai.org/api/image-editor",
-            files=files_payload, 
-            data={'text': prompt_text},
-            headers={'api-key': DEEPAI_API_KEY}
+        # 2. Upload to Cloudinary
+        upload_res = cloudinary.uploader.upload(io.BytesIO(ai_image_bytes), resource_type="image")
+        permanent_url = upload_res['secure_url']
+
+        # 3. Save to Database
+        new_entry = ImageHistory(
+            user_id=session["user_id"],
+            image_url=permanent_url,
+            style=style
         )
-        result_json = r.json()
-        
-        if 'output_url' in result_json:
-            ai_image_url = result_json['output_url']
-            
-            # Upload to Cloudinary
-            upload_res = cloudinary.uploader.upload(ai_image_url)
-            permanent_url = upload_res['secure_url']
+        db.session.add(new_entry)
+        db.session.commit()
 
-            # Save to Database
-            new_entry = ImageHistory(
-                user_id=session["user_id"],
-                image_url=permanent_url,
-                style=style
-            )
-            db.session.add(new_entry)
-            db.session.commit()
-
-            return jsonify({
-                "image": permanent_url,
-                "id": new_entry.id,
-                "style": style
-            })
-        else:
-            # --- FIX: Return the REAL error from DeepAI ---
-            # This will tell us if it's "Payment Required" or "Invalid Key"
-            error_msg = result_json.get('err', 'Unknown AI Error')
-            if 'status' in result_json: 
-                error_msg += f" (Status: {result_json['status']})"
-            return jsonify({"error": "AI says: " + str(error_msg)}), 500
+        return jsonify({
+            "image": permanent_url,
+            "id": new_entry.id,
+            "style": style
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
