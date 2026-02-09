@@ -1,156 +1,128 @@
+import os
+import datetime
+import uuid
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-import cv2, os, numpy as np
-from datetime import datetime
-import uuid 
+import requests
+import cloudinary
+import cloudinary.uploader
 
 app = Flask(__name__)
-app.secret_key = "artify_industrial_secret_key"
+app.secret_key = "studiopro_pro_secret_key"
 
-# Database & File Config
-import os
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "artify_ai.db")
-app.config["UPLOAD_FOLDER"] = os.path.join(BASE_DIR, "static/uploads")
+# --- 1. CONFIGURATION ---
+
+# Brain (DeepAI)
+DEEPAI_API_KEY = "377e9ecf-6443-4f51-b191-f7d3f8b442e7"
+
+# Storage (Cloudinary)
+cloudinary.config(
+    cloud_name = "dhococ8e5",
+    api_key = "457977599793717",    # <--- PASTE YOUR REAL API KEY HERE
+    api_secret = "uPtdj1lgu-HvQ2vnmHCgDk1QHu0" # <--- PASTE YOUR REAL API SECRET HERE
+)
+
+# Database (Neon PostgreSQL)
+db_url = "postgresql://neondb_owner:npg_JXnas5ev8AgG@ep-crimson-wind-aillfxxy-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require"
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-# --- Database Models ---
+# --- 2. DATABASE MODELS ---
 class User(db.Model):
+    __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False)
+    password = db.Column(db.String(255), nullable=False)
     history = db.relationship('ImageHistory', backref='owner', lazy=True)
-    transactions = db.relationship('Transaction', backref='payer', lazy=True)
 
 class ImageHistory(db.Model):
+    __tablename__ = 'history'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    filename = db.Column(db.String(200))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    image_url = db.Column(db.String(500), nullable=False)
     style = db.Column(db.String(50))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-
-class Transaction(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    order_id = db.Column(db.String(100), unique=True)
-    payment_id = db.Column(db.String(100))
-    amount = db.Column(db.Integer)
-    status = db.Column(db.String(20)) # Success/Failed
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
 with app.app_context():
-    if not os.path.exists(app.config["UPLOAD_FOLDER"]):
-        os.makedirs(app.config["UPLOAD_FOLDER"])
     db.create_all()
 
-# --- ALGORITHMS ---
-
-def apply_cartoon(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blur = cv2.medianBlur(gray, 7)
-    edges = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 9, 2)
-    color = cv2.bilateralFilter(img, 9, 250, 250)
-    return cv2.bitwise_and(color, color, mask=edges)
-
-def apply_sketch(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    inv = 255 - gray
-    blur = cv2.GaussianBlur(inv, (21, 21), 0)
-    return cv2.divide(gray, 255 - blur, scale=256)
-
-def apply_pencil_color(img):
-    sketch = apply_sketch(img)
-    sketch_3ch = cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
-    return cv2.multiply(img, sketch_3ch, scale=1/256)
-
-def apply_anime_ghibli(img):
-    # 1. Edge Enhancement (Keep lines crisp)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.medianBlur(gray, 5)
-    edges = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 9, 2)
-    # 2. Color Smoothing (Flat anime look)
-    color = cv2.bilateralFilter(img, 9, 300, 300)
-    # 3. Vibrancy Boost (Ghibli style saturation)
-    hsv = cv2.cvtColor(color, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(hsv)
-    s = cv2.add(s, 50) # Boost saturation
-    v = cv2.add(v, 20) # Boost brightness
-    vibrant = cv2.cvtColor(cv2.merge([h, s, v]), cv2.COLOR_HSV2BGR)
-    # 4. Combine
-    return cv2.bitwise_and(vibrant, vibrant, mask=edges)
-
-def apply_cyberpunk(img):
-    # 1. High Contrast using CLAHE
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-    cl = clahe.apply(l)
-    # 2. Color Shift (Cool Tones)
-    a = cv2.add(a, 10) # Shift Green-Red
-    b = cv2.subtract(b, 20) # Shift Blue-Yellow (More Blue)
-    result = cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2BGR)
-    return result
-
-def apply_hdr(img):
-    return cv2.detailEnhance(img, sigma_s=12, sigma_r=0.15)
-
-# --- ROUTES ---
+# --- 3. ROUTES ---
 @app.route("/")
 def index():
-    is_pro = False
-    if "user_id" in session:
-        if Transaction.query.filter_by(user_id=session["user_id"], status="Success").first(): is_pro = True
-
-    uses_left = "Unlimited (Pro)" if is_pro else (3 - session.get("guest_uses", 0))
     history = []
     if "user_id" in session:
         history = ImageHistory.query.filter_by(user_id=session["user_id"]).order_by(ImageHistory.timestamp.desc()).all()
-    
-    return render_template("index.html", logged_in="user_id" in session, username=session.get("username"), uses_left=uses_left, history=history, is_pro=is_pro)
+    return render_template("index.html", logged_in="user_id" in session, username=session.get("username"), history=history)
 
 @app.route("/process", methods=["POST"])
 def process():
-    is_pro = False
-    if "user_id" in session:
-        if Transaction.query.filter_by(user_id=session["user_id"], status="Success").first(): is_pro = True
+    if "user_id" not in session:
+        return jsonify({"auth_required": True, "message": "Please login to generate assets."})
 
-    if not is_pro:
-        current = session.get("guest_uses", 0)
-        if current >= 3: return jsonify({"auth_required": True, "message": "Trial ended. Upgrade to Pro."})
-        session["guest_uses"] = current + 1
-
-    file = request.files["file"]
+    file = request.files.get("file")
     style = request.form.get("style", "cartoon")
-    img = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
-
-    # ALGORITHM SWITCH
-    if style == 'pencil': result = apply_sketch(img)
-    elif style == 'pencil_color': result = apply_pencil_color(img)
-    elif style == 'anime': result = apply_anime_ghibli(img)
-    elif style == 'cyberpunk': result = apply_cyberpunk(img)
-    elif style == 'hdr': result = apply_hdr(img)
-    else: result = apply_cartoon(img)
     
-    name = f"proc_{datetime.now().timestamp()}.png"
-    cv2.imwrite(os.path.join(app.config["UPLOAD_FOLDER"], name), result)
+    if not file: return jsonify({"error": "No file uploaded"}), 400
 
-    if "user_id" in session:
-        db.session.add(ImageHistory(user_id=session["user_id"], filename=name, style=style))
-        db.session.commit()
+    try:
+        # Define AI Prompts
+        prompt_text = "cartoon style, clean lines, vibrant"
+        if style == 'cyberpunk': prompt_text = "cyberpunk style, neon lights, futuristic city, high contrast"
+        elif style == 'anime': prompt_text = "anime style, studio ghibli, vibrant, detailed"
+        elif style == 'pencil': prompt_text = "pencil sketch, black and white drawing, architectural"
+        elif style == 'hdr': prompt_text = "HDR photography, highly detailed, realistic, 8k"
 
-    return jsonify({"image": url_for("static", filename="uploads/"+name), "uses_left": "Unlimited" if is_pro else (3 - session.get("guest_uses", 0))})
+        # Send to DeepAI
+        r = requests.post(
+            "https://api.deepai.org/api/image-editor",
+            files={'image': file.stream}, 
+            data={'text': prompt_text},
+            headers={'api-key': DEEPAI_API_KEY}
+        )
+        result_json = r.json()
+        
+        if 'output_url' in result_json:
+            ai_image_url = result_json['output_url']
+            
+            # Upload to Cloudinary
+            upload_res = cloudinary.uploader.upload(ai_image_url)
+            permanent_url = upload_res['secure_url']
 
-@app.route("/mock_payment", methods=["POST"])
-def mock_payment():
-    if "user_id" not in session: return jsonify({"success": False})
-    new_txn = Transaction(
-        user_id=session["user_id"], order_id=f"order_{uuid.uuid4().hex[:8]}",
-        payment_id=f"pay_{uuid.uuid4().hex[:8]}", amount=5000, status="Success"
-    )
-    db.session.add(new_txn)
+            # Save to Database
+            new_entry = ImageHistory(
+                user_id=session["user_id"],
+                image_url=permanent_url,
+                style=style
+            )
+            db.session.add(new_entry)
+            db.session.commit()
+
+            return jsonify({
+                "image": permanent_url,
+                "id": new_entry.id,
+                "style": style
+            })
+        else:
+            return jsonify({"error": "AI Error"}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    if User.query.filter_by(username=data.get("username")).first():
+        return jsonify({"success": False, "message": "Username taken"})
+    new_user = User(username=data.get("username"), password=generate_password_hash(data.get("password")))
+    db.session.add(new_user)
     db.session.commit()
+    session["user_id"] = new_user.id
+    session["username"] = new_user.username
     return jsonify({"success": True})
 
 @app.route("/login", methods=["POST"])
@@ -163,18 +135,6 @@ def login():
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Invalid credentials"})
 
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.json
-    if User.query.filter_by(username=data.get("username")).first():
-        return jsonify({"success": False, "message": "Username taken"})
-    user = User(username=data.get("username"), password=generate_password_hash(data.get("password")))
-    db.session.add(user)
-    db.session.commit()
-    session["user_id"] = user.id
-    session["username"] = user.username
-    return jsonify({"success": True})
-
 @app.route("/logout")
 def logout():
     session.clear()
@@ -183,14 +143,17 @@ def logout():
 @app.route("/delete_history", methods=["POST"])
 def delete_history():
     if "user_id" not in session: return jsonify({"success": False})
-    item = ImageHistory.query.get(request.json.get("id"))
+    data = request.json
+    item = ImageHistory.query.get(data.get("id"))
     if item and item.user_id == session["user_id"]:
-        try: os.remove(os.path.join(app.config["UPLOAD_FOLDER"], item.filename))
-        except: pass
         db.session.delete(item)
         db.session.commit()
         return jsonify({"success": True})
     return jsonify({"success": False})
+    
+@app.route("/mock_payment", methods=["POST"])
+def mock_payment():
+    return jsonify({"success": True}) 
 
 if __name__ == "__main__":
     app.run(debug=True)
