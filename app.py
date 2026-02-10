@@ -64,12 +64,10 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI & LOCAL PROCESSING ---
+# --- AI PROCESSING ---
 def local_filter(img_bytes, style):
     nparr = np.frombuffer(img_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    # Resize for speed
     h, w = img.shape[:2]
     if w > 800: img = cv2.resize(img, (800, int(h * (800/w))))
 
@@ -80,19 +78,17 @@ def local_filter(img_bytes, style):
         sketch = cv2.divide(gray, 255 - blur, scale=256.0)
         res = cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
     elif style == 'cyberpunk':
-        # Purple/Blue Tint
         img_float = img.astype(np.float32) / 255.0
         b, g, r = cv2.split(img_float)
         b = np.clip(b * 1.5, 0, 1)
         r = np.clip(r * 1.2, 0, 1)
         res = (cv2.merge([b, g, r]) * 255).astype(np.uint8)
     elif style == 'anime':
-        # Saturation Boost
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
         s = cv2.add(s, 50)
         res = cv2.cvtColor(cv2.merge((h, s, v)), cv2.COLOR_HSV2BGR)
-    else: # Cartoon
+    else: 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.medianBlur(gray, 5)
         edges = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 9, 9)
@@ -103,31 +99,17 @@ def local_filter(img_bytes, style):
     return buffer.tobytes()
 
 def process_ai(file, style):
-    prompt_map = {
-        'cartoon': "cartoon style, flat colors, vector art",
-        'pencil': "pencil sketch, graphite drawing, monochrome",
-        'anime': "studio ghibli style, vibrant, anime masterpiece",
-        'cyberpunk': "cyberpunk city, neon lights, futuristic",
-    }
-    
-    # 1. Try AI First
+    prompt_map = {'cartoon': "cartoon style", 'pencil': "pencil sketch", 'anime': "anime style", 'cyberpunk': "cyberpunk city"}
     try:
         API_URL = "https://router.huggingface.co/models/prompthero/openjourney"
         headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
         file.seek(0)
         b64_img = base64.b64encode(file.read()).decode('utf-8')
-        file.seek(0) # Reset for backup
-        
+        file.seek(0)
         payload = {"inputs": b64_img, "parameters": {"prompt": "mdjrny-v4 style " + prompt_map.get(style, "")}}
         response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
-        
-        if response.status_code == 200:
-            return response.content
-            
-    except Exception as e:
-        print(f"AI Failed: {e}")
-
-    # 2. Fallback to Local Filter
+        if response.status_code == 200: return response.content
+    except Exception as e: print(f"AI Failed: {e}")
     return local_filter(file.read(), style)
 
 # --- ROUTES ---
@@ -143,22 +125,13 @@ def index():
 def process():
     file = request.files.get('file')
     style = request.form.get('style')
-    
-    if current_user.wallet < 10:
-        return jsonify({"error": "Insufficient Funds! Recharge Wallet."})
-
+    if current_user.wallet < 10: return jsonify({"error": "Insufficient Funds! Recharge Wallet."})
     img_bytes = process_ai(file, style)
-    
-    # Upload & Save
     upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
     new_img = ImageHistory(user_id=current_user.id, image_url=upload['secure_url'], style=style)
-    
-    # Deduct Cost
     current_user.wallet -= 10
-    
     db.session.add(new_img)
     db.session.commit()
-    
     return jsonify({"image": upload['secure_url'], "wallet": current_user.wallet})
 
 @app.route('/login', methods=['POST'])
@@ -175,10 +148,7 @@ def register():
     data = request.json
     if User.query.filter_by(username=data.get('username')).first():
         return jsonify({"success": False, "message": "Username taken"})
-    
-    # Auto-Admin for specific username
     is_admin = (data.get('username').lower() == 'admin')
-    
     user = User(username=data.get('username'), password=generate_password_hash(data.get('password')), is_admin=is_admin, wallet=100)
     db.session.add(user)
     db.session.commit()
@@ -200,24 +170,25 @@ def logout():
     logout_user()
     return redirect('/')
 
-# --- ADMIN PANEL DATA ---
 @app.route('/admin_data')
 @login_required
 def admin_data():
     if not current_user.is_admin: return jsonify({"error": "Unauthorized"})
     users = User.query.all()
     txs = Transaction.query.order_by(Transaction.date.desc()).all()
-    
     user_list = [{"username": u.username, "wallet": u.wallet, "role": "Admin" if u.is_admin else "User"} for u in users]
     tx_list = [{"user": t.user_id, "amount": t.amount, "date": t.date.strftime("%Y-%m-%d")} for t in txs]
-    
     return jsonify({"users": user_list, "transactions": tx_list})
 
-# --- DATABASE RESET (ONE TIME USE) ---
+# --- HARD RESET ROUTE (Fixes Database Errors) ---
 @app.route('/reset_db_force')
 def reset_db():
-    db.create_all()
-    return "Database Refreshed!"
+    try:
+        db.drop_all()   # Deletes old broken tables
+        db.create_all() # Creates new correct tables
+        return "<h1>Database Reset Successfully!</h1><p>The server is fixed. Please go back to the homepage and Register a new account.</p>"
+    except Exception as e:
+        return f"<h1>Reset Failed</h1><p>{str(e)}</p>"
 
 if __name__ == '__main__':
     with app.app_context():
