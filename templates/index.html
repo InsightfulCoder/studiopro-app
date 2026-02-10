@@ -13,30 +13,21 @@
 <div class="app-container">
     <aside class="sidebar">
         <div class="brand">✨ StudioPro</div>
-        
         {% if user %}
         <div class="user-card">
-            <div class="u-info">
-                <strong>{{ user.username }}</strong>
-                {% if user.is_admin %}<span class="badge admin">ADMIN</span>{% endif %}
-            </div>
-            <div class="u-wallet">
-                💰 ₹<span id="walletBalance">{{ user.wallet }}</span>
-            </div>
+            <div class="u-info"><strong>{{ user.username }}</strong> {% if user.is_admin %}<span style="color:#f59e0b; font-size:10px;">ADMIN</span>{% endif %}</div>
+            <div class="u-wallet">💰 ₹<span id="walletBalance">{{ user.wallet }}</span></div>
         </div>
-
         <nav>
-            <a href="#" class="nav-btn active">🎨 Generator</a>
+            <a href="#" class="nav-btn active">🎨 AI Designer</a>
             <a href="#" onclick="openModal('walletModal')" class="nav-btn">💳 Add Funds</a>
-            {% if user.is_admin %}
-            <a href="#" onclick="loadAdmin()" class="nav-btn admin-btn">👑 Admin Panel</a>
-            {% endif %}
-            <a href="/logout" class="nav-btn logout">🚪 Logout</a>
+            {% if user.is_admin %} <a href="#" onclick="loadAdmin()" class="nav-btn admin-btn">👑 Admin Panel</a> {% endif %}
+            <a href="/logout" class="nav-btn">🚪 Logout</a>
         </nav>
         {% else %}
-        <div class="auth-box">
-            <p>Welcome! Please login.</p>
-            <button onclick="openModal('authModal')" class="btn-primary">Login / Signup</button>
+        <div style="text-align:center; padding:20px; color:#94a3b8;">
+            <p>Please login to start.</p>
+            <button onclick="openModal('authModal')" class="btn-generate">Login / Signup</button>
         </div>
         {% endif %}
     </aside>
@@ -49,14 +40,12 @@
                     <span id="uploadText">📤 Click to Upload Image</span>
                     <input type="file" id="fileInput" hidden accept="image/*" onchange="previewImage(this)">
                 </div>
-
                 <div class="style-grid">
                     <label class="style-opt"><input type="radio" name="style" value="cartoon" checked><span>Cartoon</span></label>
                     <label class="style-opt"><input type="radio" name="style" value="pencil"><span>Sketch</span></label>
                     <label class="style-opt"><input type="radio" name="style" value="anime"><span>Anime</span></label>
                     <label class="style-opt"><input type="radio" name="style" value="cyberpunk"><span>Cyberpunk</span></label>
                 </div>
-
                 <button class="btn-generate" onclick="generate()">✨ Generate Asset (10 Coins)</button>
             </div>
 
@@ -69,37 +58,42 @@
                 </div>
             </div>
         </div>
-        
-        {% if history %}
-        <div class="history-strip">
-            {% for item in history %}
-            <img src="{{ item.image_url }}" onclick="loadHistory('{{ item.image_url }}')">
-            {% endfor %}
-        </div>
-        {% endif %}
     </main>
 </div>
 
 <div id="authModal" class="modal hidden">
-    <div class="modal-content">
-        <h3>Welcome Back</h3>
-        <input type="text" id="authUser" placeholder="Username">
-        <input type="password" id="authPass" placeholder="Password">
-        <div class="modal-actions">
-            <button onclick="auth('login')" class="btn-primary">Login</button>
-            <button onclick="auth('register')" class="btn-secondary">Register</button>
+    <div class="auth-card">
+        <div class="auth-header">
+            <h2>Welcome Back</h2>
+            <p style="color:#94a3b8; margin:5px 0 0 0; font-size:13px;">Login or create an account to continue</p>
         </div>
-        <button onclick="closeModal('authModal')" class="close-btn">×</button>
+        <div class="auth-body">
+            <div class="input-group">
+                <label>Username</label>
+                <input type="text" id="authUser" placeholder="Enter username">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="authPass" placeholder="Enter password">
+            </div>
+            <div class="auth-actions">
+                <button onclick="auth('login')" class="btn-login">Login</button>
+                <button onclick="auth('register')" class="btn-register">Create Account</button>
+            </div>
+            <div style="text-align:center; margin-top:10px;">
+                <button onclick="closeModal('authModal')" style="background:none; border:none; color:#64748b; cursor:pointer;">Close</button>
+            </div>
+        </div>
     </div>
 </div>
 
 <div id="walletModal" class="modal hidden">
     <div class="modal-content">
         <h3>💰 Add Funds</h3>
-        <div class="amount-grid">
-            <button onclick="pay(100)">₹100</button>
-            <button onclick="pay(500)">₹500</button>
-            <button onclick="pay(1000)">₹1000</button>
+        <p style="color:#94a3b8;">Simulate a payment to add coins.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:20px;">
+            <button onclick="pay(100)" class="btn-register">₹100</button>
+            <button onclick="pay(500)" class="btn-register">₹500</button>
         </div>
         <button onclick="closeModal('walletModal')" class="close-btn">×</button>
     </div>
