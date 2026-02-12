@@ -6,7 +6,7 @@ import requests
 import numpy as np
 import cv2
 import random
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -43,12 +43,12 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
-    wallet = db.Column(db.Integer, default=30) # CHANGED: 30 Coins = 3 Free Tries
+    wallet = db.Column(db.Integer, default=0) # Registered users start with 0 (must pay)
     history = db.relationship('ImageHistory', backref='owner', lazy=True)
 
 class ImageHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # Nullable for guests
     image_url = db.Column(db.String(500))
     style = db.Column(db.String(50))
     timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
@@ -66,6 +66,7 @@ def load_user(user_id):
 
 # --- AI PROCESSING ---
 def local_filter(img_bytes, style):
+    # This is the BACKUP only if AI fails entirely
     nparr = np.frombuffer(img_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     h, w = img.shape[:2]
@@ -77,48 +78,52 @@ def local_filter(img_bytes, style):
         blur = cv2.GaussianBlur(inv, (21, 21), 0)
         sketch = cv2.divide(gray, 255 - blur, scale=256.0)
         res = cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
-    elif style == 'cyberpunk':
-        img_float = img.astype(np.float32) / 255.0
-        b, g, r = cv2.split(img_float)
-        b = np.clip(b * 1.5, 0, 1)
-        r = np.clip(r * 1.2, 0, 1)
-        res = (cv2.merge([b, g, r]) * 255).astype(np.uint8)
-    elif style == 'anime':
+    else:
+        # Generic enhancement for other failed styles
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
-        s = cv2.add(s, 50)
+        s = cv2.add(s, 40) 
         res = cv2.cvtColor(cv2.merge((h, s, v)), cv2.COLOR_HSV2BGR)
-    else: 
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.medianBlur(gray, 5)
-        edges = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 9, 9)
-        color = cv2.bilateralFilter(img, 9, 250, 250)
-        res = cv2.bitwise_and(color, color, mask=edges)
 
     success, buffer = cv2.imencode('.png', res)
     return buffer.tobytes()
 
 def process_ai(file, style):
-    # Enhanced Prompts for better quality
+    # SWITCHED TO: Stable Diffusion v1.5 (Most Reliable Free Model)
     prompt_map = {
-        'cartoon': "cartoon style, flat colors, vector art, high quality, 8k", 
-        'pencil': "pencil sketch, graphite drawing, monochrome, detailed, masterpiece", 
-        'anime': "anime style, studio ghibli, vibrant, highly detailed, 8k resolution", 
+        'cartoon': "cartoon style, flat colors, vector art, high quality", 
+        'pencil': "pencil sketch, graphite drawing, monochrome, detailed", 
+        'anime': "anime style, studio ghibli, vibrant, highly detailed, 8k", 
         'cyberpunk': "cyberpunk city, neon lights, futuristic, photorealistic, 8k"
     }
+    
+    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+    
+    file.seek(0)
+    b64_img = base64.b64encode(file.read()).decode('utf-8')
+    file.seek(0)
+    
+    # Stable Diffusion Image-to-Image Parameters
+    payload = {
+        "inputs": b64_img,
+        "parameters": {
+            "prompt": prompt_map.get(style, "high quality illustration"),
+            "strength": 0.75, # How much to change the image (0.0 - 1.0)
+            "guidance_scale": 7.5
+        }
+    }
+    
     try:
-        API_URL = "https://router.huggingface.co/models/prompthero/openjourney"
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
-        file.seek(0)
-        b64_img = base64.b64encode(file.read()).decode('utf-8')
-        file.seek(0)
-        payload = {"inputs": b64_img, "parameters": {"prompt": "mdjrny-v4 style " + prompt_map.get(style, "")}}
-        
-        # CHANGED: Increased timeout to 25s so it doesn't give up too early
         response = requests.post(API_URL, headers=headers, json=payload, timeout=25)
+        if response.status_code == 200:
+            return response.content
+        else:
+            print(f"AI Error {response.status_code}: {response.text}")
+    except Exception as e:
+        print(f"AI Connection Failed: {e}")
         
-        if response.status_code == 200: return response.content
-    except Exception as e: print(f"AI Failed: {e}")
+    # If we reach here, AI failed. Use backup.
     return local_filter(file.read(), style)
 
 # --- ROUTES ---
@@ -130,18 +135,49 @@ def index():
     return render_template('index.html', user=None)
 
 @app.route('/process', methods=['POST'])
-@login_required
 def process():
+    # 1. GUEST LOGIC (Not Logged In)
+    if not current_user.is_authenticated:
+        if 'guest_usage' not in session:
+            session['guest_usage'] = 0
+        
+        if session['guest_usage'] >= 3:
+            return jsonify({
+                "error": "Free Trial Over! Please Login.", 
+                "auth_required": True
+            })
+        
+        session['guest_usage'] += 1
+        tries_left = 3 - session['guest_usage']
+    
+    # 2. USER LOGIC (Logged In)
+    else:
+        if current_user.wallet < 10:
+            return jsonify({"error": "Insufficient Funds! Please Add Funds."})
+        tries_left = "Paid"
+
+    # 3. GENERATE
     file = request.files.get('file')
     style = request.form.get('style')
-    if current_user.wallet < 10: return jsonify({"error": "Insufficient Funds! Recharge Wallet."})
+    
     img_bytes = process_ai(file, style)
     upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
-    new_img = ImageHistory(user_id=current_user.id, image_url=upload['secure_url'], style=style)
-    current_user.wallet -= 10
-    db.session.add(new_img)
-    db.session.commit()
-    return jsonify({"image": upload['secure_url'], "wallet": current_user.wallet})
+    
+    # 4. SAVE & DEDUCT
+    if current_user.is_authenticated:
+        new_img = ImageHistory(user_id=current_user.id, image_url=upload['secure_url'], style=style)
+        current_user.wallet -= 10
+        db.session.add(new_img)
+        db.session.commit()
+        wallet_balance = current_user.wallet
+    else:
+        wallet_balance = f"Guest ({tries_left} left)"
+
+    return jsonify({
+        "image": upload['secure_url'], 
+        "wallet": wallet_balance,
+        "message": "Generated!"
+    })
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -149,6 +185,8 @@ def login():
     user = User.query.filter_by(username=data.get('username')).first()
     if user and check_password_hash(user.password, data.get('password')):
         login_user(user)
+        # Reset guest usage on login
+        session.pop('guest_usage', None)
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Invalid credentials"})
 
@@ -158,11 +196,11 @@ def register():
     if User.query.filter_by(username=data.get('username')).first():
         return jsonify({"success": False, "message": "Username taken"})
     is_admin = (data.get('username').lower() == 'admin')
-    # CHANGED: Default wallet is now 30 (3 Free Tries)
-    user = User(username=data.get('username'), password=generate_password_hash(data.get('password')), is_admin=is_admin, wallet=30)
+    user = User(username=data.get('username'), password=generate_password_hash(data.get('password')), is_admin=is_admin, wallet=0)
     db.session.add(user)
     db.session.commit()
     login_user(user)
+    session.pop('guest_usage', None)
     return jsonify({"success": True})
 
 @app.route('/pay', methods=['POST'])
@@ -190,7 +228,7 @@ def admin_data():
     tx_list = [{"user": t.user_id, "amount": t.amount, "date": t.date.strftime("%Y-%m-%d")} for t in txs]
     return jsonify({"users": user_list, "transactions": tx_list})
 
-# Route kept just in case, but user won't see it
+# HARD RESET (Run this once if database errors persist)
 @app.route('/reset_db_force')
 def reset_db():
     try:
