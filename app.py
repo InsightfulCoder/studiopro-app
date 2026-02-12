@@ -15,11 +15,11 @@ import cloudinary.uploader
 app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
-# --- CONFIGURATION (SECURE METHOD) ---
-# This tells the app to look in Render's settings for the key
+# --- 1. SECURE CONFIGURATION ---
+# This looks for the key inside Render's "Environment" tab
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ PASTE YOUR CLOUDINARY KEYS HERE (These are safe to leave in code for now) ⚠️
+# ⚠️ YOUR CLOUDINARY KEYS (Preserved from your code) ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -66,8 +66,13 @@ def load_user(user_id):
 
 # --- AI PROCESSING ---
 def local_filter(img_bytes, style):
+    # Runs if AI fails
     nparr = np.frombuffer(img_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
+    # Safety check if image is invalid
+    if img is None: return b''
+
     h, w = img.shape[:2]
     if w > 800: img = cv2.resize(img, (800, int(h * (800/w))))
 
@@ -87,23 +92,27 @@ def local_filter(img_bytes, style):
     return buffer.tobytes()
 
 def process_ai(file, style):
-    if not HUGGINGFACE_API_KEY:
-        print("ERROR: No API Key found in Environment!")
-        return local_filter(file.read(), style)
+    # FIX: Read file ONCE safely
+    file.seek(0)
+    file_bytes = file.read()
 
+    # 1. Check if Key exists
+    if not HUGGINGFACE_API_KEY:
+        print("❌ API Key missing. Using Backup.")
+        return local_filter(file_bytes, style)
+
+    # 2. Prepare AI Request
     prompt_map = {
         'cartoon': "cartoon style, vector art, flat color, high quality", 
         'pencil': "pencil sketch, graphite, monochrome, detailed", 
-        'anime': "anime style, studio ghibli, vibrant, masterpiece", 
+        'anime': "anime style, studio ghibli, vibrant, masterpiece, 8k", 
         'cyberpunk': "cyberpunk city, neon lights, futuristic, 8k"
     }
     
     API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    file.seek(0)
-    b64_img = base64.b64encode(file.read()).decode('utf-8')
-    file.seek(0)
+    b64_img = base64.b64encode(file_bytes).decode('utf-8')
     
     payload = {
         "inputs": b64_img,
@@ -115,15 +124,19 @@ def process_ai(file, style):
     }
     
     try:
+        # 3. Call AI
         response = requests.post(API_URL, headers=headers, json=payload, timeout=25)
+        
         if response.status_code == 200:
             return response.content
         else:
             print(f"AI Error: {response.text}")
+            
     except Exception as e:
         print(f"Connection Error: {e}")
         
-    return local_filter(file.read(), style)
+    # 4. Fallback (Uses the safe file_bytes we read earlier)
+    return local_filter(file_bytes, style)
 
 # --- ROUTES ---
 @app.route('/')
@@ -135,10 +148,12 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process():
+    # Guest Logic
     if not current_user.is_authenticated:
         if 'guest_count' not in session: session['guest_count'] = 0   
         if session['guest_count'] >= 3:
             return jsonify({"auth_required": True, "error": "Free Limit Reached (3/3). Please Login!"})
+        
         session['guest_count'] += 1
         current_wallet = f"Guest ({3 - session['guest_count']} left)"
     else:
@@ -147,10 +162,14 @@ def process():
 
     file = request.files.get('file')
     style = request.form.get('style')
+    
+    # Process
     img_bytes = process_ai(file, style)
     
+    # Upload
     upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
     
+    # Save & Charge
     if current_user.is_authenticated:
         current_user.wallet -= 10
         new_entry = ImageHistory(user_id=current_user.id, image_url=upload['secure_url'], style=style)
