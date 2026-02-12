@@ -15,11 +15,11 @@ import cloudinary.uploader
 app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
-# --- CONFIGURATION ---
-# ⚠️ RE PLACE THIS WITH YOUR NEW KEY YOU JUST CREATED ON HUGGING FACE ⚠️
-HUGGINGFACE_API_KEY = "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"
+# --- CONFIGURATION (SECURE METHOD) ---
+# This tells the app to look in Render's settings for the key
+HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ PASTE YOUR CLOUDINARY KEYS HERE ⚠️
+# ⚠️ PASTE YOUR CLOUDINARY KEYS HERE (These are safe to leave in code for now) ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -48,7 +48,7 @@ class User(UserMixin, db.Model):
 
 class ImageHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # Nullable for guests
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     image_url = db.Column(db.String(500))
     style = db.Column(db.String(50))
     timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
@@ -66,7 +66,6 @@ def load_user(user_id):
 
 # --- AI PROCESSING ---
 def local_filter(img_bytes, style):
-    # Backup Filter (Only runs if AI Key fails)
     nparr = np.frombuffer(img_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     h, w = img.shape[:2]
@@ -79,7 +78,6 @@ def local_filter(img_bytes, style):
         sketch = cv2.divide(gray, 255 - blur, scale=256.0)
         res = cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
     else:
-        # Saturation boost for color styles
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
         s = cv2.add(s, 50) 
@@ -89,7 +87,10 @@ def local_filter(img_bytes, style):
     return buffer.tobytes()
 
 def process_ai(file, style):
-    # Stable Diffusion v1.5 (Reliable & High Quality)
+    if not HUGGINGFACE_API_KEY:
+        print("ERROR: No API Key found in Environment!")
+        return local_filter(file.read(), style)
+
     prompt_map = {
         'cartoon': "cartoon style, vector art, flat color, high quality", 
         'pencil': "pencil sketch, graphite, monochrome, detailed", 
@@ -134,47 +135,30 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process():
-    # --- GUEST LOGIC (3 Free Tries) ---
     if not current_user.is_authenticated:
-        if 'guest_count' not in session:
-            session['guest_count'] = 0
-            
+        if 'guest_count' not in session: session['guest_count'] = 0   
         if session['guest_count'] >= 3:
-            return jsonify({
-                "auth_required": True, 
-                "error": "Free Limit Reached (3/3). Please Login!"
-            })
-        
+            return jsonify({"auth_required": True, "error": "Free Limit Reached (3/3). Please Login!"})
         session['guest_count'] += 1
         current_wallet = f"Guest ({3 - session['guest_count']} left)"
-        
-    # --- USER LOGIC (Pay 10 Coins) ---
     else:
-        if current_user.wallet < 10:
-            return jsonify({"error": "Insufficient Funds! Add Coins."})
+        if current_user.wallet < 10: return jsonify({"error": "Insufficient Funds! Add Coins."})
         current_wallet = current_user.wallet - 10
 
-    # Generate
     file = request.files.get('file')
     style = request.form.get('style')
     img_bytes = process_ai(file, style)
     
-    # Upload
     upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
     
-    # Save & Charge User
     if current_user.is_authenticated:
         current_user.wallet -= 10
         new_entry = ImageHistory(user_id=current_user.id, image_url=upload['secure_url'], style=style)
         db.session.add(new_entry)
         db.session.commit()
-        current_wallet = current_user.wallet # Update real balance
+        current_wallet = current_user.wallet
 
-    return jsonify({
-        "image": upload['secure_url'], 
-        "wallet": current_wallet,
-        "message": "Success"
-    })
+    return jsonify({"image": upload['secure_url'], "wallet": current_wallet, "message": "Success"})
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -182,7 +166,7 @@ def login():
     user = User.query.filter_by(username=data.get('username')).first()
     if user and check_password_hash(user.password, data.get('password')):
         login_user(user)
-        session.pop('guest_count', None) # Reset guest counter
+        session.pop('guest_count', None)
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Invalid credentials"})
 
@@ -224,7 +208,6 @@ def admin_data():
     tx_list = [{"user": t.user_id, "amount": t.amount, "date": t.date.strftime("%Y-%m-%d")} for t in txs]
     return jsonify({"users": user_list, "transactions": tx_list})
 
-# Database Reset Utility
 @app.route('/reset_db_force')
 def reset_db():
     try:
