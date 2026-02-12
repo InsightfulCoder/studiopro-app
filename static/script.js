@@ -32,21 +32,17 @@ async function auth(endpoint) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({username: u, password: p})
         });
-        
         const data = await res.json();
         if(data.success) location.reload();
         else alert("Error: " + data.message);
-        
-    } catch(err) { 
-        alert("Login Failed. Please check connection."); 
-    }
+    } catch(err) { alert("Connection Error"); }
 }
 
 async function generate() {
     if(!currentFile) return alert("⚠️ Please upload an image first!");
     const btn = document.querySelector('.btn-generate');
     const originalText = btn.innerText;
-    btn.innerText = "⏳ Processing AI...";
+    btn.innerText = "⏳ Processing...";
     btn.disabled = true;
 
     const fd = new FormData();
@@ -57,28 +53,28 @@ async function generate() {
         const res = await fetch('/process', { method: 'POST', body: fd });
         
         // Handle Server Crash (500)
-        if (res.status === 500) {
-            throw new Error("Server Error. Please Refresh.");
-        }
+        if (res.status === 500) throw new Error("Server Error. Please Refresh.");
         
         const data = await res.json();
         
-        // HANDLE FREE TRIAL OVER
+        // 1. FREE TRIAL OVER -> Show Login
         if(data.auth_required) {
-            alert("⚠️ " + data.error);
-            openModal('authModal'); // Force open login
+            alert("🛑 " + data.error);
+            openModal('authModal');
         } 
+        // 2. ERROR -> Show Alert
         else if(data.error) {
             alert("⚠️ " + data.error);
         } 
+        // 3. SUCCESS -> Show Image
         else {
             document.getElementById('processedImg').src = data.image;
-            // Only update wallet if the element exists (user is logged in)
-            const walletEl = document.getElementById('walletBalance');
-            if(walletEl) walletEl.innerText = data.wallet;
+            // Update wallet if visible
+            const wElement = document.getElementById('walletBalance');
+            if(wElement) wElement.innerText = data.wallet;
         }
     } catch(err) { 
-        alert("Generation Failed: " + err.message); 
+        alert("Failed: " + err.message); 
     } finally {
         btn.innerText = originalText;
         btn.disabled = false;
@@ -86,7 +82,7 @@ async function generate() {
 }
 
 async function pay(amount) {
-    if(!confirm(`Pay ₹${amount} to StudioPro?`)) return;
+    if(!confirm(`Pay ₹${amount}?`)) return;
     try {
         const res = await fetch('/pay', {
             method: 'POST',
@@ -95,7 +91,7 @@ async function pay(amount) {
         });
         const data = await res.json();
         if(data.success) { alert("✅ Success!"); location.reload(); }
-    } catch(err) { alert("Transaction Failed"); }
+    } catch(err) { alert("Failed"); }
 }
 
 async function loadAdmin() {
