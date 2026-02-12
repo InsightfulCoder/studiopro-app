@@ -43,7 +43,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
-    wallet = db.Column(db.Integer, default=0)
+    wallet = db.Column(db.Integer, default=30) # CHANGED: 30 Coins = 3 Free Tries
     history = db.relationship('ImageHistory', backref='owner', lazy=True)
 
 class ImageHistory(db.Model):
@@ -99,7 +99,13 @@ def local_filter(img_bytes, style):
     return buffer.tobytes()
 
 def process_ai(file, style):
-    prompt_map = {'cartoon': "cartoon style", 'pencil': "pencil sketch", 'anime': "anime style", 'cyberpunk': "cyberpunk city"}
+    # Enhanced Prompts for better quality
+    prompt_map = {
+        'cartoon': "cartoon style, flat colors, vector art, high quality, 8k", 
+        'pencil': "pencil sketch, graphite drawing, monochrome, detailed, masterpiece", 
+        'anime': "anime style, studio ghibli, vibrant, highly detailed, 8k resolution", 
+        'cyberpunk': "cyberpunk city, neon lights, futuristic, photorealistic, 8k"
+    }
     try:
         API_URL = "https://router.huggingface.co/models/prompthero/openjourney"
         headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
@@ -107,7 +113,10 @@ def process_ai(file, style):
         b64_img = base64.b64encode(file.read()).decode('utf-8')
         file.seek(0)
         payload = {"inputs": b64_img, "parameters": {"prompt": "mdjrny-v4 style " + prompt_map.get(style, "")}}
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
+        
+        # CHANGED: Increased timeout to 25s so it doesn't give up too early
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=25)
+        
         if response.status_code == 200: return response.content
     except Exception as e: print(f"AI Failed: {e}")
     return local_filter(file.read(), style)
@@ -149,7 +158,8 @@ def register():
     if User.query.filter_by(username=data.get('username')).first():
         return jsonify({"success": False, "message": "Username taken"})
     is_admin = (data.get('username').lower() == 'admin')
-    user = User(username=data.get('username'), password=generate_password_hash(data.get('password')), is_admin=is_admin, wallet=100)
+    # CHANGED: Default wallet is now 30 (3 Free Tries)
+    user = User(username=data.get('username'), password=generate_password_hash(data.get('password')), is_admin=is_admin, wallet=30)
     db.session.add(user)
     db.session.commit()
     login_user(user)
@@ -180,15 +190,15 @@ def admin_data():
     tx_list = [{"user": t.user_id, "amount": t.amount, "date": t.date.strftime("%Y-%m-%d")} for t in txs]
     return jsonify({"users": user_list, "transactions": tx_list})
 
-# --- HARD RESET ROUTE (Fixes Database Errors) ---
+# Route kept just in case, but user won't see it
 @app.route('/reset_db_force')
 def reset_db():
     try:
-        db.drop_all()   # Deletes old broken tables
-        db.create_all() # Creates new correct tables
-        return "<h1>Database Reset Successfully!</h1><p>The server is fixed. Please go back to the homepage and Register a new account.</p>"
+        db.drop_all()
+        db.create_all()
+        return "Database Reset!"
     except Exception as e:
-        return f"<h1>Reset Failed</h1><p>{str(e)}</p>"
+        return str(e)
 
 if __name__ == '__main__':
     with app.app_context():
