@@ -33,18 +33,12 @@ async function auth(endpoint) {
             body: JSON.stringify({username: u, password: p})
         });
         
-        // FIX: Check if response is valid JSON
-        const contentType = res.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-            throw new Error("Server Database Error. Please Reset DB.");
-        }
-
         const data = await res.json();
         if(data.success) location.reload();
         else alert("Error: " + data.message);
         
     } catch(err) { 
-        alert("Login Failed: " + err.message); 
+        alert("Login Failed. Please check connection."); 
     }
 }
 
@@ -52,7 +46,7 @@ async function generate() {
     if(!currentFile) return alert("⚠️ Please upload an image first!");
     const btn = document.querySelector('.btn-generate');
     const originalText = btn.innerText;
-    btn.innerText = "⏳ Processing...";
+    btn.innerText = "⏳ Processing AI...";
     btn.disabled = true;
 
     const fd = new FormData();
@@ -62,14 +56,26 @@ async function generate() {
     try {
         const res = await fetch('/process', { method: 'POST', body: fd });
         
-        // FIX: Handle Server Crashes gracefully
-        if (res.status === 500) throw new Error("Server Error (500). Please Reset Database.");
+        // Handle Server Crash (500)
+        if (res.status === 500) {
+            throw new Error("Server Error. Please Refresh.");
+        }
         
         const data = await res.json();
-        if(data.error) alert("⚠️ " + data.error);
+        
+        // HANDLE FREE TRIAL OVER
+        if(data.auth_required) {
+            alert("⚠️ " + data.error);
+            openModal('authModal'); // Force open login
+        } 
+        else if(data.error) {
+            alert("⚠️ " + data.error);
+        } 
         else {
             document.getElementById('processedImg').src = data.image;
-            if(document.getElementById('walletBalance')) document.getElementById('walletBalance').innerText = data.wallet;
+            // Only update wallet if the element exists (user is logged in)
+            const walletEl = document.getElementById('walletBalance');
+            if(walletEl) walletEl.innerText = data.wallet;
         }
     } catch(err) { 
         alert("Generation Failed: " + err.message); 
