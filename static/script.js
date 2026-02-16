@@ -8,8 +8,17 @@ function previewImage(input) {
         currentFile = input.files[0];
         const reader = new FileReader();
         reader.onload = function(e) {
-            document.getElementById('originalImg').src = e.target.result;
-            document.getElementById('processedImg').src = e.target.result;
+            // Set source
+            const orig = document.getElementById('originalImg');
+            const proc = document.getElementById('processedImg');
+            
+            orig.src = e.target.result;
+            proc.src = e.target.result;
+            
+            // Add 'loaded' class to make them visible (removes broken icon)
+            orig.classList.add('loaded');
+            proc.classList.add('loaded');
+            
             document.getElementById('uploadText').innerText = "✅ Image Loaded";
         }
         reader.readAsDataURL(input.files[0]);
@@ -21,11 +30,11 @@ function moveSlider(val) {
     document.getElementById('sliderHandle').style.left = val + "%";
 }
 
-// NEW: Load image from history into the 'After' slot
 function loadHistory(url) {
-    document.getElementById('processedImg').src = url;
+    const proc = document.getElementById('processedImg');
+    proc.src = url;
+    proc.classList.add('loaded'); // Make visible
     closeModal('historyModal');
-    alert("Project loaded into viewer!");
 }
 
 async function auth(endpoint) {
@@ -68,7 +77,10 @@ async function generate() {
         } else if(data.error) {
             alert("⚠️ " + data.error);
         } else {
-            document.getElementById('processedImg').src = data.image;
+            const proc = document.getElementById('processedImg');
+            proc.src = data.image;
+            proc.classList.add('loaded'); // Ensure visible
+            
             const wElement = document.getElementById('walletBalance');
             if(wElement) wElement.innerText = data.wallet;
         }
