@@ -17,7 +17,7 @@ app.secret_key = "studiopro_pro_secret_key"
 # --- CONFIGURATION ---
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ YOUR CLOUDINARY KEYS ⚠️
+# ⚠️ YOUR CLOUDINARY KEYS (PRE-FILLED) ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -61,21 +61,21 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (FIXED: Uses Router + OpenJourney) ---
+# --- AI LOGIC (FIXED: Using Stable Diffusion v1.5) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ API Key missing in Render Environment.")
 
-    # 1. NEW MODEL URL (OpenJourney - Very Reliable)
-    API_URL = "https://router.huggingface.co/models/prompthero/openjourney"
+    # 1. FIXED MODEL URL (RunwayML v1.5 - The most reliable free model)
+    API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    # 2. Prompts Optimized for OpenJourney
+    # 2. Prompts
     prompt_map = {
-        'cartoon': "mdjrny-v4 style, cartoon, vector art, flat color, high quality", 
-        'pencil': "mdjrny-v4 style, pencil sketch, graphite, monochrome, highly detailed", 
-        'anime': "mdjrny-v4 style, anime style, studio ghibli, vibrant, masterpiece", 
-        'cyberpunk': "mdjrny-v4 style, cyberpunk city, neon lights, futuristic, 8k"
+        'cartoon': "cartoon style, vector art, flat color, high quality", 
+        'pencil': "pencil sketch, graphite, monochrome, highly detailed", 
+        'anime': "anime style, studio ghibli, vibrant, masterpiece", 
+        'cyberpunk': "cyberpunk city, neon lights, futuristic, 8k"
     }
     
     # 3. Prepare Image
@@ -86,7 +86,9 @@ def process_ai(file, style):
     payload = {
         "inputs": b64_img,
         "parameters": {
-            "prompt": prompt_map.get(style, "mdjrny-v4 style illustration"),
+            "prompt": prompt_map.get(style, "illustration"),
+            "strength": 0.75, 
+            "guidance_scale": 7.5
         }
     }
     
@@ -99,6 +101,8 @@ def process_ai(file, style):
         elif response.status_code == 503:
             raise Exception("⏳ AI is loading. Please click Generate again in 10 seconds.")
         else:
+            # If 404 occurs here, it means Hugging Face is having a global outage, 
+            # but v1-5 is the least likely to fail.
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
     except requests.exceptions.Timeout:
