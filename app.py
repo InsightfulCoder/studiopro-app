@@ -4,7 +4,6 @@ import io
 import base64
 import requests
 import numpy as np
-import cv2
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -15,18 +14,18 @@ import cloudinary.uploader
 app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
-# --- 1. SECURE CONFIGURATION ---
-# This looks for the key inside Render's "Environment" tab
+# --- 1. CONFIGURATION ---
+# Secure AI Key (from Render Settings)
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ YOUR CLOUDINARY KEYS (Preserved from your code) ⚠️
+# Storage Keys (I have inserted yours here!)
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
     api_secret = "uPtdj1lgu-HvQ2vnmHCgDk1QHu0" 
 )
 
-# Database Config
+# Database
 db_url = "postgresql://neondb_owner:npg_JXnas5ev8AgG@ep-crimson-wind-aillfxxy-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require"
 if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -37,7 +36,7 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'index'
 
-# --- DATABASE MODELS ---
+# --- MODELS ---
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
@@ -64,55 +63,26 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI PROCESSING ---
-def local_filter(img_bytes, style):
-    # Runs if AI fails
-    nparr = np.frombuffer(img_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    # Safety check if image is invalid
-    if img is None: return b''
-
-    h, w = img.shape[:2]
-    if w > 800: img = cv2.resize(img, (800, int(h * (800/w))))
-
-    if style == 'pencil':
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        inv = 255 - gray
-        blur = cv2.GaussianBlur(inv, (21, 21), 0)
-        sketch = cv2.divide(gray, 255 - blur, scale=256.0)
-        res = cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
-    else:
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        h, s, v = cv2.split(hsv)
-        s = cv2.add(s, 50) 
-        res = cv2.cvtColor(cv2.merge((h, s, v)), cv2.COLOR_HSV2BGR)
-
-    success, buffer = cv2.imencode('.png', res)
-    return buffer.tobytes()
-
+# --- AI LOGIC (STRICT - NO BACKUP) ---
 def process_ai(file, style):
-    # FIX: Read file ONCE safely
-    file.seek(0)
-    file_bytes = file.read()
-
-    # 1. Check if Key exists
+    # 1. Validation
     if not HUGGINGFACE_API_KEY:
-        print("❌ API Key missing. Using Backup.")
-        return local_filter(file_bytes, style)
+        raise Exception("❌ Server Error: API Key is missing in Render Environment.")
 
-    # 2. Prepare AI Request
+    # 2. Model Configuration
     prompt_map = {
-        'cartoon': "cartoon style, vector art, flat color, high quality", 
-        'pencil': "pencil sketch, graphite, monochrome, detailed", 
+        'cartoon': "cartoon style, vector art, flat color, high quality, masterpiece", 
+        'pencil': "pencil sketch, graphite, monochrome, highly detailed, rough paper texture", 
         'anime': "anime style, studio ghibli, vibrant, masterpiece, 8k", 
-        'cyberpunk': "cyberpunk city, neon lights, futuristic, 8k"
+        'cyberpunk': "cyberpunk city, neon lights, futuristic, photorealistic, 8k"
     }
     
     API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    b64_img = base64.b64encode(file_bytes).decode('utf-8')
+    # 3. Prepare Image
+    file.seek(0)
+    b64_img = base64.b64encode(file.read()).decode('utf-8')
     
     payload = {
         "inputs": b64_img,
@@ -123,61 +93,64 @@ def process_ai(file, style):
         }
     }
     
+    # 4. Request
     try:
-        # 3. Call AI
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=25)
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=50) # Long timeout for cold starts
         
         if response.status_code == 200:
             return response.content
+        elif response.status_code == 503:
+            raise Exception("⏳ AI is warming up (503). Please click Generate again in 10 seconds.")
         else:
-            print(f"AI Error: {response.text}")
+            raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
+    except requests.exceptions.Timeout:
+        raise Exception("⏱️ AI Timeout. Model is busy. Try again.")
     except Exception as e:
-        print(f"Connection Error: {e}")
-        
-    # 4. Fallback (Uses the safe file_bytes we read earlier)
-    return local_filter(file_bytes, style)
+        raise Exception(f"⚠️ Connection Error: {str(e)}")
 
 # --- ROUTES ---
 @app.route('/')
 def index():
+    history = []
     if current_user.is_authenticated:
-        history = ImageHistory.query.filter_by(user_id=current_user.id).order_by(ImageHistory.timestamp.desc()).all()
-        return render_template('index.html', user=current_user, history=history)
-    return render_template('index.html', user=None)
+        # Fetch last 20 images
+        history = ImageHistory.query.filter_by(user_id=current_user.id).order_by(ImageHistory.timestamp.desc()).limit(20).all()
+    return render_template('index.html', user=current_user if current_user.is_authenticated else None, history=history)
 
 @app.route('/process', methods=['POST'])
 def process():
-    # Guest Logic
+    # Auth Logic
     if not current_user.is_authenticated:
         if 'guest_count' not in session: session['guest_count'] = 0   
         if session['guest_count'] >= 3:
             return jsonify({"auth_required": True, "error": "Free Limit Reached (3/3). Please Login!"})
-        
+        current_wallet = f"Guest ({2 - session['guest_count']} left)"
         session['guest_count'] += 1
-        current_wallet = f"Guest ({3 - session['guest_count']} left)"
     else:
         if current_user.wallet < 10: return jsonify({"error": "Insufficient Funds! Add Coins."})
         current_wallet = current_user.wallet - 10
 
-    file = request.files.get('file')
-    style = request.form.get('style')
-    
-    # Process
-    img_bytes = process_ai(file, style)
-    
-    # Upload
-    upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
-    
-    # Save & Charge
-    if current_user.is_authenticated:
-        current_user.wallet -= 10
-        new_entry = ImageHistory(user_id=current_user.id, image_url=upload['secure_url'], style=style)
-        db.session.add(new_entry)
-        db.session.commit()
-        current_wallet = current_user.wallet
+    # AI Generation
+    try:
+        file = request.files.get('file')
+        style = request.form.get('style')
+        
+        img_bytes = process_ai(file, style) # This will now FAIL LOUDLY if AI breaks
+        
+        upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
+        
+        if current_user.is_authenticated:
+            current_user.wallet -= 10
+            new_entry = ImageHistory(user_id=current_user.id, image_url=upload['secure_url'], style=style)
+            db.session.add(new_entry)
+            db.session.commit()
+            current_wallet = current_user.wallet
 
-    return jsonify({"image": upload['secure_url'], "wallet": current_wallet, "message": "Success"})
+        return jsonify({"image": upload['secure_url'], "wallet": current_wallet, "message": "Success"})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}) # Show exact error to user
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -199,7 +172,6 @@ def register():
     db.session.add(user)
     db.session.commit()
     login_user(user)
-    session.pop('guest_count', None)
     return jsonify({"success": True})
 
 @app.route('/pay', methods=['POST'])
@@ -230,13 +202,10 @@ def admin_data():
 @app.route('/reset_db_force')
 def reset_db():
     try:
-        db.drop_all()
-        db.create_all()
+        db.drop_all(); db.create_all()
         return "DB Reset Success"
-    except Exception as e:
-        return str(e)
+    except Exception as e: return str(e)
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
+    with app.app_context(): db.create_all()
     app.run(debug=True)
