@@ -15,8 +15,8 @@ app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
 # --- CONFIGURATION (SECURE) ---
-# This line stops GitHub from blocking you. 
-# It reads the key from Render's Safe Box instead.
+# GitHub will allow this because there is no actual password here.
+# It reads the password from Render's settings.
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 # ⚠️ YOUR CLOUDINARY KEYS ⚠️
@@ -63,7 +63,7 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (FIXED URL + SECURE KEY) ---
+# --- AI LOGIC (FIXED: Router URL + Secure Key) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ Server Error: Key missing in Render Environment.")
