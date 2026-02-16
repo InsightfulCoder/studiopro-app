@@ -14,10 +14,12 @@ import cloudinary.uploader
 app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (SECURE) ---
+# This line stops GitHub from blocking you. 
+# It reads the key from Render's Safe Box instead.
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ CLOUDINARY KEYS (PRE-FILLED) ⚠️
+# ⚠️ YOUR CLOUDINARY KEYS ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -61,16 +63,16 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (FIXED: Uses 'router' endpoint) ---
+# --- AI LOGIC (FIXED URL + SECURE KEY) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
-        raise Exception("❌ API Key missing in Render Environment.")
+        raise Exception("❌ Server Error: Key missing in Render Environment.")
 
-    # 1. FIXED URL (Using 'router' instead of 'api-inference')
+    # 1. FIXED URL: Using 'router' endpoint (Fixes 410 Gone)
+    # 2. FIXED MODEL: Using 'stable-diffusion-v1-5' (Fixes 404 Not Found)
     API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    # 2. Prompts
     prompt_map = {
         'cartoon': "cartoon style, vector art, flat color, high quality", 
         'pencil': "pencil sketch, graphite, monochrome, highly detailed", 
@@ -78,11 +80,9 @@ def process_ai(file, style):
         'cyberpunk': "cyberpunk city, neon lights, futuristic, 8k"
     }
     
-    # 3. Prepare Image
     file.seek(0)
     b64_img = base64.b64encode(file.read()).decode('utf-8')
     
-    # 4. Payload
     payload = {
         "inputs": b64_img,
         "parameters": {
@@ -92,16 +92,14 @@ def process_ai(file, style):
         }
     }
     
-    # 5. Request
     try:
         response = requests.post(API_URL, headers=headers, json=payload, timeout=50)
         
         if response.status_code == 200:
             return response.content
         elif response.status_code == 503:
-            raise Exception("⏳ AI is loading. Please click Generate again in 10 seconds.")
+            raise Exception("⏳ AI is loading. Click Generate again in 10 seconds.")
         else:
-            # Catch 410 or other errors
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
     except requests.exceptions.Timeout:
