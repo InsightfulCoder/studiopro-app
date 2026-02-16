@@ -17,7 +17,7 @@ app.secret_key = "studiopro_pro_secret_key"
 # --- CONFIGURATION ---
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ YOUR CLOUDINARY KEYS (PRE-FILLED) ⚠️
+# ⚠️ CLOUDINARY KEYS (PRE-FILLED) ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -61,13 +61,13 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (FIXED: Using Stable Diffusion v1.5) ---
+# --- AI LOGIC (FIXED: Uses 'router' endpoint) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ API Key missing in Render Environment.")
 
-    # 1. FIXED MODEL URL (RunwayML v1.5 - The most reliable free model)
-    API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+    # 1. FIXED URL (Using 'router' instead of 'api-inference')
+    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
     # 2. Prompts
@@ -101,8 +101,7 @@ def process_ai(file, style):
         elif response.status_code == 503:
             raise Exception("⏳ AI is loading. Please click Generate again in 10 seconds.")
         else:
-            # If 404 occurs here, it means Hugging Face is having a global outage, 
-            # but v1-5 is the least likely to fail.
+            # Catch 410 or other errors
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
     except requests.exceptions.Timeout:
