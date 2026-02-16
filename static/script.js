@@ -21,6 +21,13 @@ function moveSlider(val) {
     document.getElementById('sliderHandle').style.left = val + "%";
 }
 
+// NEW: Load image from history into the 'After' slot
+function loadHistory(url) {
+    document.getElementById('processedImg').src = url;
+    closeModal('historyModal');
+    alert("Project loaded into viewer!");
+}
+
 async function auth(endpoint) {
     const u = document.getElementById('authUser').value;
     const p = document.getElementById('authPass').value;
@@ -51,25 +58,17 @@ async function generate() {
 
     try {
         const res = await fetch('/process', { method: 'POST', body: fd });
-        
-        // Handle Server Crash (500)
-        if (res.status === 500) throw new Error("Server Error. Please Refresh.");
+        if (res.status === 500) throw new Error("Server Error. Check API Key.");
         
         const data = await res.json();
         
-        // 1. FREE TRIAL OVER -> Show Login
         if(data.auth_required) {
             alert("🛑 " + data.error);
             openModal('authModal');
-        } 
-        // 2. ERROR -> Show Alert
-        else if(data.error) {
+        } else if(data.error) {
             alert("⚠️ " + data.error);
-        } 
-        // 3. SUCCESS -> Show Image
-        else {
+        } else {
             document.getElementById('processedImg').src = data.image;
-            // Update wallet if visible
             const wElement = document.getElementById('walletBalance');
             if(wElement) wElement.innerText = data.wallet;
         }
