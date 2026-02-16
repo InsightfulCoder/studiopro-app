@@ -14,18 +14,16 @@ import cloudinary.uploader
 app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
-# --- 1. CONFIGURATION ---
-# Secure AI Key (from Render Settings)
+# --- CONFIGURATION ---
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# Storage Keys (I have inserted yours here!)
+# ⚠️ YOUR CLOUDINARY KEYS ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
     api_secret = "uPtdj1lgu-HvQ2vnmHCgDk1QHu0" 
 )
 
-# Database
 db_url = "postgresql://neondb_owner:npg_JXnas5ev8AgG@ep-crimson-wind-aillfxxy-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require"
 if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -63,49 +61,51 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (STRICT - NO BACKUP) ---
+# --- AI LOGIC (UPDATED MODEL) ---
 def process_ai(file, style):
-    # 1. Validation
     if not HUGGINGFACE_API_KEY:
-        raise Exception("❌ Server Error: API Key is missing in Render Environment.")
+        raise Exception("❌ API Key missing in Render Environment.")
 
-    # 2. Model Configuration
-    prompt_map = {
-        'cartoon': "cartoon style, vector art, flat color, high quality, masterpiece", 
-        'pencil': "pencil sketch, graphite, monochrome, highly detailed, rough paper texture", 
-        'anime': "anime style, studio ghibli, vibrant, masterpiece, 8k", 
-        'cyberpunk': "cyberpunk city, neon lights, futuristic, photorealistic, 8k"
-    }
-    
-    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+    # 1. NEW MODEL URL (Stability AI 2.1 - Reliable)
+    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    # 3. Prepare Image
+    prompt_map = {
+        'cartoon': "cartoon style, vector art, flat color, high quality", 
+        'pencil': "pencil sketch, graphite, monochrome, highly detailed", 
+        'anime': "anime style, studio ghibli, vibrant, masterpiece", 
+        'cyberpunk': "cyberpunk city, neon lights, futuristic, 8k"
+    }
+    
+    # 2. Prepare Image
     file.seek(0)
     b64_img = base64.b64encode(file.read()).decode('utf-8')
     
+    # 3. Payload (img2img for SD 2.1)
     payload = {
         "inputs": b64_img,
         "parameters": {
             "prompt": prompt_map.get(style, "illustration"),
-            "strength": 0.75, 
+            "strength": 0.75, # Controls how much to change the original
             "guidance_scale": 7.5
         }
     }
     
     # 4. Request
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=50) # Long timeout for cold starts
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=50)
         
         if response.status_code == 200:
             return response.content
         elif response.status_code == 503:
-            raise Exception("⏳ AI is warming up (503). Please click Generate again in 10 seconds.")
+             # If loading, wait slightly and return error to frontend to retry
+            raise Exception("⏳ AI is loading. Please click Generate again in 10 seconds.")
         else:
+            # 404 or other errors
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
     except requests.exceptions.Timeout:
-        raise Exception("⏱️ AI Timeout. Model is busy. Try again.")
+        raise Exception("⏱️ AI Timeout. Please try again.")
     except Exception as e:
         raise Exception(f"⚠️ Connection Error: {str(e)}")
 
@@ -114,13 +114,11 @@ def process_ai(file, style):
 def index():
     history = []
     if current_user.is_authenticated:
-        # Fetch last 20 images
         history = ImageHistory.query.filter_by(user_id=current_user.id).order_by(ImageHistory.timestamp.desc()).limit(20).all()
     return render_template('index.html', user=current_user if current_user.is_authenticated else None, history=history)
 
 @app.route('/process', methods=['POST'])
 def process():
-    # Auth Logic
     if not current_user.is_authenticated:
         if 'guest_count' not in session: session['guest_count'] = 0   
         if session['guest_count'] >= 3:
@@ -131,12 +129,11 @@ def process():
         if current_user.wallet < 10: return jsonify({"error": "Insufficient Funds! Add Coins."})
         current_wallet = current_user.wallet - 10
 
-    # AI Generation
     try:
         file = request.files.get('file')
         style = request.form.get('style')
         
-        img_bytes = process_ai(file, style) # This will now FAIL LOUDLY if AI breaks
+        img_bytes = process_ai(file, style)
         
         upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
         
@@ -150,7 +147,7 @@ def process():
         return jsonify({"image": upload['secure_url'], "wallet": current_wallet, "message": "Success"})
 
     except Exception as e:
-        return jsonify({"error": str(e)}) # Show exact error to user
+        return jsonify({"error": str(e)})
 
 @app.route('/login', methods=['POST'])
 def login():
