@@ -17,13 +17,14 @@ app.secret_key = "studiopro_pro_secret_key"
 # --- CONFIGURATION ---
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ YOUR CLOUDINARY KEYS ⚠️
+# ⚠️ YOUR CLOUDINARY KEYS (PRE-FILLED) ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
     api_secret = "uPtdj1lgu-HvQ2vnmHCgDk1QHu0" 
 )
 
+# Database
 db_url = "postgresql://neondb_owner:npg_JXnas5ev8AgG@ep-crimson-wind-aillfxxy-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require"
 if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -61,13 +62,13 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (UPDATED MODEL) ---
+# --- AI LOGIC (UPDATED TO NEW ROUTER) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ API Key missing in Render Environment.")
 
-    # 1. NEW MODEL URL (Stability AI 2.1 - Reliable)
-    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"
+    # 1. NEW URL (Fixed: Changed 'api-inference' to 'router')
+    API_URL = "https://router.huggingface.co/models/stabilityai/stable-diffusion-2-1"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
     prompt_map = {
@@ -81,12 +82,12 @@ def process_ai(file, style):
     file.seek(0)
     b64_img = base64.b64encode(file.read()).decode('utf-8')
     
-    # 3. Payload (img2img for SD 2.1)
+    # 3. Payload
     payload = {
         "inputs": b64_img,
         "parameters": {
             "prompt": prompt_map.get(style, "illustration"),
-            "strength": 0.75, # Controls how much to change the original
+            "strength": 0.75, 
             "guidance_scale": 7.5
         }
     }
@@ -98,10 +99,8 @@ def process_ai(file, style):
         if response.status_code == 200:
             return response.content
         elif response.status_code == 503:
-             # If loading, wait slightly and return error to frontend to retry
-            raise Exception("⏳ AI is loading. Please click Generate again in 10 seconds.")
+            raise Exception("⏳ AI is loading (503). Please click Generate again in 10 seconds.")
         else:
-            # 404 or other errors
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
     except requests.exceptions.Timeout:
