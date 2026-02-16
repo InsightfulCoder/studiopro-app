@@ -17,14 +17,13 @@ app.secret_key = "studiopro_pro_secret_key"
 # --- CONFIGURATION ---
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ YOUR CLOUDINARY KEYS (PRE-FILLED) ⚠️
+# ⚠️ YOUR CLOUDINARY KEYS ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
     api_secret = "uPtdj1lgu-HvQ2vnmHCgDk1QHu0" 
 )
 
-# Database
 db_url = "postgresql://neondb_owner:npg_JXnas5ev8AgG@ep-crimson-wind-aillfxxy-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require"
 if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -62,44 +61,43 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (UPDATED TO NEW ROUTER) ---
+# --- AI LOGIC (FIXED: Uses Router + OpenJourney) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ API Key missing in Render Environment.")
 
-    # 1. NEW URL (Fixed: Changed 'api-inference' to 'router')
-    API_URL = "https://router.huggingface.co/models/stabilityai/stable-diffusion-2-1"
+    # 1. NEW MODEL URL (OpenJourney - Very Reliable)
+    API_URL = "https://router.huggingface.co/models/prompthero/openjourney"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
+    # 2. Prompts Optimized for OpenJourney
     prompt_map = {
-        'cartoon': "cartoon style, vector art, flat color, high quality", 
-        'pencil': "pencil sketch, graphite, monochrome, highly detailed", 
-        'anime': "anime style, studio ghibli, vibrant, masterpiece", 
-        'cyberpunk': "cyberpunk city, neon lights, futuristic, 8k"
+        'cartoon': "mdjrny-v4 style, cartoon, vector art, flat color, high quality", 
+        'pencil': "mdjrny-v4 style, pencil sketch, graphite, monochrome, highly detailed", 
+        'anime': "mdjrny-v4 style, anime style, studio ghibli, vibrant, masterpiece", 
+        'cyberpunk': "mdjrny-v4 style, cyberpunk city, neon lights, futuristic, 8k"
     }
     
-    # 2. Prepare Image
+    # 3. Prepare Image
     file.seek(0)
     b64_img = base64.b64encode(file.read()).decode('utf-8')
     
-    # 3. Payload
+    # 4. Payload
     payload = {
         "inputs": b64_img,
         "parameters": {
-            "prompt": prompt_map.get(style, "illustration"),
-            "strength": 0.75, 
-            "guidance_scale": 7.5
+            "prompt": prompt_map.get(style, "mdjrny-v4 style illustration"),
         }
     }
     
-    # 4. Request
+    # 5. Request
     try:
         response = requests.post(API_URL, headers=headers, json=payload, timeout=50)
         
         if response.status_code == 200:
             return response.content
         elif response.status_code == 503:
-            raise Exception("⏳ AI is loading (503). Please click Generate again in 10 seconds.")
+            raise Exception("⏳ AI is loading. Please click Generate again in 10 seconds.")
         else:
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
