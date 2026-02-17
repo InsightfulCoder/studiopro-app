@@ -15,8 +15,8 @@ app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
 # --- CONFIGURATION (SECURE) ---
-# This line is the magic link. It pulls the key you just saved in Render (Screenshot 361).
-# Because there is no actual password written here, GitHub will accept it immediately.
+# This line grabs the key you just pasted in Render.
+# GitHub will accept this file because there is no secret here.
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 # ⚠️ YOUR CLOUDINARY KEYS ⚠️
