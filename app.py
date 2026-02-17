@@ -17,7 +17,6 @@ app.secret_key = "studiopro_pro_secret_key"
 # --- CONFIGURATION (SECURE) ---
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ CLOUDINARY KEYS ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -50,47 +49,36 @@ class ImageHistory(db.Model):
     style = db.Column(db.String(50))
     timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
-class Transaction(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    amount = db.Column(db.Integer)
-    status = db.Column(db.String(50))
-    date = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-# --- AI LOGIC (REFINED FOR LOGOS) ---
+# --- AI LOGIC (LOGO LOCK MODE) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ API Key missing in Render Environment.")
 
-    # Using the standard SDXL model path
-    API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
+    # 🛑 CONTROLNET MODEL: This model is built to follow edges/shapes exactly
+    API_URL = "https://router.huggingface.co/hf-inference/models/diffusers/controlnet-canny-sdxl-1.0"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    # We focus the AI on "Icon" and "Logo" design to prevent backgrounds
-    boost = "clean bold lines, professional logo, flat design, sharp edges, 8k"
+    # We focus strictly on "Logo Design" and "Textures"
+    boost = "professional logo icon, centered, clean flat vector, 4k, sharp focus"
     
     prompt_map = {
-        'cartoon': f"3D glossy plastic logo, Pixar lighting, vibrant, {boost}", 
-        'pencil': f"clean pencil sketch logo on plain white background, {boost}", 
-        'anime': f"cel-shaded anime style icon, high contrast, clean outlines, {boost}", 
-        'cyberpunk': f"neon glowing logo, futuristic glass texture, synthwave, {boost}"
+        'cartoon': f"3D glossy plastic texture, vibrant colors, {boost}", 
+        'pencil': f"clean pencil sketch on white paper, artistic graphite shading, {boost}", 
+        'anime': f"cel-shaded anime style icon, high contrast outlines, {boost}", 
+        'cyberpunk': f"neon glowing lines, futuristic metallic texture, synthwave, {boost}"
     }
     
     file.seek(0)
     b64_img = base64.b64encode(file.read()).decode('utf-8')
     
     payload = {
-        "inputs": prompt_map.get(style, f"graphic design icon, {boost}"),
+        "inputs": prompt_map.get(style, f"digital art, {boost}"),
         "parameters": {
-            # 🛑 CRITICAL: We ban scenery and backgrounds to keep the logo clean
-            "negative_prompt": "scenery, background, buildings, forest, city, complex environment, messy, distorted",
+            # 🛑 NO PEOPLE/SCENERY: This stops the random anime girls from appearing
+            "negative_prompt": "human, person, face, woman, girl, man, scenery, background, forest, blurry, distorted, messy",
             "image": b64_img,
-            "strength": 0.35,      # 🛑 LOW STRENGTH = Keep your original shape
-            "guidance_scale": 8.0  # 🛑 MODERATE GUIDANCE = Cleaner output
+            "strength": 0.25,      # 🛑 LOW STRENGTH = 75% original logo preserved
+            "guidance_scale": 7.0
         }
     }
     
@@ -99,7 +87,7 @@ def process_ai(file, style):
         if response.status_code == 200:
             return response.content
         elif response.status_code == 503:
-            raise Exception("⏳ AI is warming up. Please click Generate again in 20 seconds.")
+            raise Exception("⏳ AI server is warming up. Please try again in 20 seconds.")
         else:
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
     except Exception as e:
@@ -166,37 +154,10 @@ def register():
     login_user(user)
     return jsonify({"success": True})
 
-@app.route('/pay', methods=['POST'])
-@login_required
-def pay():
-    amount = int(request.json.get('amount'))
-    current_user.wallet += amount
-    trans = Transaction(user_id=current_user.id, amount=amount, status="Success")
-    db.session.add(trans)
-    db.session.commit()
-    return jsonify({"success": True, "new_balance": current_user.wallet})
-
 @app.route('/logout')
 def logout():
     logout_user()
     return redirect('/')
-
-@app.route('/admin_data')
-@login_required
-def admin_data():
-    if not current_user.is_admin: return jsonify({"error": "Unauthorized"})
-    users = User.query.all()
-    txs = Transaction.query.order_by(Transaction.date.desc()).all()
-    user_list = [{"username": u.username, "wallet": u.wallet, "role": "Admin" if u.is_admin else "User"} for u in users]
-    tx_list = [{"user": t.user_id, "amount": t.amount, "date": t.date.strftime("%Y-%m-%d")} for t in txs]
-    return jsonify({"users": user_list, "transactions": tx_list})
-
-@app.route('/reset_db_force')
-def reset_db():
-    try:
-        db.drop_all(); db.create_all()
-        return "DB Reset Success"
-    except Exception as e: return str(e)
 
 if __name__ == '__main__':
     with app.app_context(): db.create_all()
