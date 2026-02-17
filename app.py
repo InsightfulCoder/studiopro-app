@@ -61,20 +61,21 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (MULTI-MODEL FAILSAFE) ---
+# --- AI LOGIC (UPDATED WITH SDXL) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ Server Error: API Key missing in Render Environment.")
 
-    # LIST OF MODELS TO TRY (If one fails, it tries the next)
+    # NEW LIST: Using SDXL which is currently the most active free model
     MODELS_TO_TRY = [
-        "stabilityai/stable-diffusion-2-1",
-        "prompthero/openjourney",
-        "CompVis/stable-diffusion-v1-4"
+        "stabilityai/stable-diffusion-xl-base-1.0",
+        "runwayml/stable-diffusion-v1-5",
+        "kandinsky-community/kandinsky-2-2-decoder"
     ]
 
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
+    # 2. Enhanced Prompts
     prompt_map = {
         'cartoon': "cartoon style, vector art, flat color, high quality", 
         'pencil': "pencil sketch, graphite, monochrome, highly detailed", 
@@ -82,9 +83,11 @@ def process_ai(file, style):
         'cyberpunk': "cyberpunk city, neon lights, futuristic, 8k"
     }
     
+    # 3. Read File
     file.seek(0)
     b64_img = base64.b64encode(file.read()).decode('utf-8')
     
+    # 4. Payload
     payload = {
         "inputs": b64_img,
         "parameters": {
@@ -94,7 +97,7 @@ def process_ai(file, style):
         }
     }
 
-    # LOOP THROUGH MODELS
+    # 5. LOOP
     last_error = ""
     for model in MODELS_TO_TRY:
         API_URL = f"https://router.huggingface.co/models/{model}"
@@ -107,18 +110,17 @@ def process_ai(file, style):
                 print(f"✅ Success with {model}!")
                 return response.content
             elif response.status_code == 503:
-                raise Exception("⏳ AI is warming up. Please click Generate again.")
+                raise Exception(f"⏳ Model {model} is warming up. Click Generate again.")
             else:
                 print(f"⚠️ Failed {model}: {response.status_code}")
-                last_error = f"Error {response.status_code}: {response.text}"
-                continue # Try next model
+                last_error = f"Error {response.status_code} on {model}"
+                continue 
                 
         except Exception as e:
             print(f"⚠️ Error {model}: {str(e)}")
             last_error = str(e)
             continue
 
-    # If all models fail
     raise Exception(f"❌ All AI Models Failed. Last error: {last_error}")
 
 # --- ROUTES ---
