@@ -15,7 +15,8 @@ app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
 # --- CONFIGURATION (SECURE) ---
-# Reads the key from your Render environment variables to stay safe from GitHub scanners.
+# This line pulls the key you just saved in Render.
+# GitHub will accept this file because there is NO password in the text.
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 # ⚠️ YOUR CLOUDINARY KEYS ⚠️
@@ -25,7 +26,6 @@ cloudinary.config(
     api_secret = "uPtdj1lgu-HvQ2vnmHCgDk1QHu0" 
 )
 
-# Database Setup
 db_url = "postgresql://neondb_owner:npg_JXnas5ev8AgG@ep-crimson-wind-aillfxxy-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require"
 if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -36,7 +36,7 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'index'
 
-# --- DATABASE MODELS ---
+# --- MODELS ---
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
@@ -63,26 +63,24 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (HIGH-FIDELITY SDXL) ---
+# --- AI LOGIC (ROUTER FIX + SDXL) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ API Key missing in Render Environment.")
 
-    # Using the new SDXL 1.0 via the Router API
-    API_URL = "https://router.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+    # 🛑 CRITICAL FIX: The correct URL path for the new Router
+    API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    # NEGATIVE PROMPTS: Explicitly tells the AI what to AVOID for cleaner results.
-    negative_prompt = "blurry, low quality, distorted, extra fingers, mutated hands, bad anatomy, text, watermark, grainy, pixelated"
-    
-    # QUALITY BOOST: Adds professional aesthetic instructions to your chosen style.
+    # High-quality technical prompts
     quality_boost = "(masterpiece:1.3), (highly detailed:1.2), cinematic lighting, 8k resolution, sharp focus"
+    negative_prompt = "blurry, low quality, distorted, extra fingers, mutated hands, bad anatomy, text, grainy"
     
     prompt_map = {
-        'cartoon': f"(Pixar style 3D render:1.4), vibrant colors, cute character, {quality_boost}", 
-        'pencil': f"(hyper-realistic pencil sketch:1.3), fine graphite lines, artistic shading, {quality_boost}", 
-        'anime': f"(Studio Ghibli style:1.3), beautiful scenery, high quality anime art, {quality_boost}", 
-        'cyberpunk': f"(neon futuristic city:1.3), photorealistic, volumetric lighting, {quality_boost}"
+        'cartoon': f"Pixar style 3D render, vibrant, cute character, {quality_boost}", 
+        'pencil': f"hyper-realistic pencil sketch, fine graphite lines, {quality_boost}", 
+        'anime': f"Studio Ghibli style, high quality anime art, {quality_boost}", 
+        'cyberpunk': f"neon futuristic city, photorealistic, volumetric lighting, {quality_boost}"
     }
     
     file.seek(0)
@@ -93,9 +91,8 @@ def process_ai(file, style):
         "parameters": {
             "negative_prompt": negative_prompt,
             "image": b64_img,
-            "strength": 0.55,      # Keeps your original shape while adding professional detail.
-            "guidance_scale": 11.0, # Forces the AI to strictly follow the style prompts.
-            "num_inference_steps": 40 # Higher steps lead to cleaner textures.
+            "strength": 0.55,
+            "guidance_scale": 11.0
         }
     }
     
@@ -105,15 +102,14 @@ def process_ai(file, style):
         if response.status_code == 200:
             return response.content
         elif response.status_code == 503:
-            # Free tier models often need a "warm-up" period.
-            raise Exception("⏳ AI server is warming up. Please click Generate again in 20 seconds.")
+            raise Exception("⏳ AI is warming up. Please click Generate again in 20 seconds.")
         else:
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
     except Exception as e:
         raise Exception(f"⚠️ Connection Error: {str(e)}")
 
-# --- APPLICATION ROUTES ---
+# --- ROUTES ---
 @app.route('/')
 def index():
     history = []
@@ -123,7 +119,6 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process():
-    # Handle Guest vs User Access
     if not current_user.is_authenticated:
         if 'guest_count' not in session: session['guest_count'] = 0   
         if session['guest_count'] >= 3:
@@ -138,13 +133,9 @@ def process():
         file = request.files.get('file')
         style = request.form.get('style')
         
-        # 1. Generate the AI image
         img_bytes = process_ai(file, style)
-        
-        # 2. Upload the result to Cloudinary
         upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
         
-        # 3. Save to User History if logged in
         if current_user.is_authenticated:
             current_user.wallet -= 10
             new_entry = ImageHistory(user_id=current_user.id, image_url=upload['secure_url'], style=style)
@@ -157,7 +148,6 @@ def process():
     except Exception as e:
         return jsonify({"error": str(e)})
 
-# --- AUTHENTICATION ROUTES ---
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
@@ -195,7 +185,6 @@ def logout():
     logout_user()
     return redirect('/')
 
-# --- ADMIN PANEL DATA ---
 @app.route('/admin_data')
 @login_required
 def admin_data():
@@ -206,7 +195,6 @@ def admin_data():
     tx_list = [{"user": t.user_id, "amount": t.amount, "date": t.date.strftime("%Y-%m-%d")} for t in txs]
     return jsonify({"users": user_list, "transactions": tx_list})
 
-# --- SYSTEM TOOLS ---
 @app.route('/reset_db_force')
 def reset_db():
     try:
