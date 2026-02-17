@@ -15,8 +15,6 @@ app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
 # --- CONFIGURATION (SECURE) ---
-# This line is the secret bridge. It pulls the key from Render's Safe Box.
-# Because the actual key is not written here, GitGuardian will not flag it.
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 # ⚠️ CLOUDINARY KEYS ⚠️
@@ -63,49 +61,47 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (ROUTER FIX + SDXL) ---
+# --- AI LOGIC (REFINED FOR LOGOS) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ API Key missing in Render Environment.")
 
-    # CORRECT URL: Includes the /hf-inference/ path required by the new Router
+    # Using the standard SDXL model path
     API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    # High-quality technical prompts
-    quality_boost = "(masterpiece:1.3), (highly detailed:1.2), cinematic lighting, 8k resolution, sharp focus"
-    negative_prompt = "blurry, low quality, distorted, extra fingers, mutated hands, bad anatomy, text, grainy"
+    # We focus the AI on "Icon" and "Logo" design to prevent backgrounds
+    boost = "clean bold lines, professional logo, flat design, sharp edges, 8k"
     
     prompt_map = {
-        'cartoon': f"Pixar style 3D render, vibrant, cute character, {quality_boost}", 
-        'pencil': f"hyper-realistic pencil sketch, fine graphite lines, {quality_boost}", 
-        'anime': f"Studio Ghibli style, high quality anime art, {quality_boost}", 
-        'cyberpunk': f"neon futuristic city, photorealistic, volumetric lighting, {quality_boost}"
+        'cartoon': f"3D glossy plastic logo, Pixar lighting, vibrant, {boost}", 
+        'pencil': f"clean pencil sketch logo on plain white background, {boost}", 
+        'anime': f"cel-shaded anime style icon, high contrast, clean outlines, {boost}", 
+        'cyberpunk': f"neon glowing logo, futuristic glass texture, synthwave, {boost}"
     }
     
     file.seek(0)
     b64_img = base64.b64encode(file.read()).decode('utf-8')
     
     payload = {
-        "inputs": prompt_map.get(style, f"digital art, {quality_boost}"),
+        "inputs": prompt_map.get(style, f"graphic design icon, {boost}"),
         "parameters": {
-            "negative_prompt": negative_prompt,
+            # 🛑 CRITICAL: We ban scenery and backgrounds to keep the logo clean
+            "negative_prompt": "scenery, background, buildings, forest, city, complex environment, messy, distorted",
             "image": b64_img,
-            "strength": 0.55,
-            "guidance_scale": 11.0
+            "strength": 0.35,      # 🛑 LOW STRENGTH = Keep your original shape
+            "guidance_scale": 8.0  # 🛑 MODERATE GUIDANCE = Cleaner output
         }
     }
     
     try:
         response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
-        
         if response.status_code == 200:
             return response.content
         elif response.status_code == 503:
             raise Exception("⏳ AI is warming up. Please click Generate again in 20 seconds.")
         else:
             raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
-            
     except Exception as e:
         raise Exception(f"⚠️ Connection Error: {str(e)}")
 
