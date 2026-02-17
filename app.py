@@ -15,8 +15,8 @@ app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
 # --- CONFIGURATION (SECURE) ---
-# GitHub will allow this because there is no actual password here.
-# It reads the password from Render's settings.
+# This line is the magic link. It pulls the key you just saved in Render (Screenshot 361).
+# Because there is no actual password written here, GitHub will accept it immediately.
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 # ⚠️ YOUR CLOUDINARY KEYS ⚠️
@@ -63,13 +63,13 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (FIXED: Router URL + Secure Key) ---
+# --- AI LOGIC (ROUTER + V1.5) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ Server Error: Key missing in Render Environment.")
 
-    # 1. FIXED URL: Using 'router' endpoint (Fixes 410 Gone)
-    # 2. FIXED MODEL: Using 'stable-diffusion-v1-5' (Fixes 404 Not Found)
+    # FIXED URL: Using 'router' endpoint (Fixes 410 Gone)
+    # FIXED MODEL: Using 'stable-diffusion-v1-5' (Fixes 404 Not Found)
     API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
