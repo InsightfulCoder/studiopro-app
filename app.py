@@ -14,9 +14,7 @@ import cloudinary.uploader
 app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
-# --- CONFIGURATION (SECURE) ---
-# This line grabs the key you just pasted in Render.
-# GitHub will accept this file because there is no secret here.
+# --- CONFIGURATION ---
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 # ⚠️ YOUR CLOUDINARY KEYS ⚠️
@@ -63,14 +61,18 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (ROUTER + V1.5) ---
+# --- AI LOGIC (MULTI-MODEL FAILSAFE) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
-        raise Exception("❌ Server Error: Key missing in Render Environment.")
+        raise Exception("❌ Server Error: API Key missing in Render Environment.")
 
-    # FIXED URL: Using 'router' endpoint (Fixes 410 Gone)
-    # FIXED MODEL: Using 'stable-diffusion-v1-5' (Fixes 404 Not Found)
-    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+    # LIST OF MODELS TO TRY (If one fails, it tries the next)
+    MODELS_TO_TRY = [
+        "stabilityai/stable-diffusion-2-1",
+        "prompthero/openjourney",
+        "CompVis/stable-diffusion-v1-4"
+    ]
+
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
     prompt_map = {
@@ -91,21 +93,33 @@ def process_ai(file, style):
             "guidance_scale": 7.5
         }
     }
-    
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=50)
+
+    # LOOP THROUGH MODELS
+    last_error = ""
+    for model in MODELS_TO_TRY:
+        API_URL = f"https://router.huggingface.co/models/{model}"
+        print(f"🔄 Trying Model: {model}...")
         
-        if response.status_code == 200:
-            return response.content
-        elif response.status_code == 503:
-            raise Exception("⏳ AI is loading. Click Generate again in 10 seconds.")
-        else:
-            raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
+        try:
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=40)
             
-    except requests.exceptions.Timeout:
-        raise Exception("⏱️ AI Timeout. Please try again.")
-    except Exception as e:
-        raise Exception(f"⚠️ Connection Error: {str(e)}")
+            if response.status_code == 200:
+                print(f"✅ Success with {model}!")
+                return response.content
+            elif response.status_code == 503:
+                raise Exception("⏳ AI is warming up. Please click Generate again.")
+            else:
+                print(f"⚠️ Failed {model}: {response.status_code}")
+                last_error = f"Error {response.status_code}: {response.text}"
+                continue # Try next model
+                
+        except Exception as e:
+            print(f"⚠️ Error {model}: {str(e)}")
+            last_error = str(e)
+            continue
+
+    # If all models fail
+    raise Exception(f"❌ All AI Models Failed. Last error: {last_error}")
 
 # --- ROUTES ---
 @app.route('/')
