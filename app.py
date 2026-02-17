@@ -17,7 +17,7 @@ app.secret_key = "studiopro_pro_secret_key"
 # --- CONFIGURATION ---
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ YOUR CLOUDINARY KEYS ⚠️
+# ⚠️ CLOUDINARY KEYS ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -61,67 +61,49 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- AI LOGIC (UPDATED WITH SDXL) ---
+# --- AI LOGIC (SDXL MAX QUALITY) ---
 def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
-        raise Exception("❌ Server Error: API Key missing in Render Environment.")
+        raise Exception("❌ API Key missing in Render Environment.")
 
-    # NEW LIST: Using SDXL which is currently the most active free model
-    MODELS_TO_TRY = [
-        "stabilityai/stable-diffusion-xl-base-1.0",
-        "runwayml/stable-diffusion-v1-5",
-        "kandinsky-community/kandinsky-2-2-decoder"
-    ]
-
+    # Using SDXL 1.0 for the highest possible quality
+    API_URL = "https://router.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
-    # 2. Enhanced Prompts
+    # QUALITY BOOSTER: Added "cinematic, 8k, highly detailed" to every style
+    quality_boost = "cinematic lighting, 8k resolution, highly detailed, masterpiece, professional photography"
+    
     prompt_map = {
-        'cartoon': "cartoon style, vector art, flat color, high quality", 
-        'pencil': "pencil sketch, graphite, monochrome, highly detailed", 
-        'anime': "anime style, studio ghibli, vibrant, masterpiece", 
-        'cyberpunk': "cyberpunk city, neon lights, futuristic, 8k"
+        'cartoon': f"cartoon style, vector art, flat color, {quality_boost}", 
+        'pencil': f"pencil sketch, graphite, monochrome, highly detailed, fine art, {quality_boost}", 
+        'anime': f"anime style, studio ghibli, vibrant, 4k, {quality_boost}", 
+        'cyberpunk': f"cyberpunk city, neon lights, futuristic, photorealistic, {quality_boost}"
     }
     
-    # 3. Read File
     file.seek(0)
     b64_img = base64.b64encode(file.read()).decode('utf-8')
     
-    # 4. Payload
     payload = {
         "inputs": b64_img,
         "parameters": {
-            "prompt": prompt_map.get(style, "illustration"),
-            "strength": 0.75, 
-            "guidance_scale": 7.5
+            "prompt": prompt_map.get(style, f"digital art, {quality_boost}"),
+            "strength": 0.65, # Balanced to keep the original shape but add high-quality textures
+            "guidance_scale": 12.0 # Forces the AI to follow the quality prompts strictly
         }
     }
-
-    # 5. LOOP
-    last_error = ""
-    for model in MODELS_TO_TRY:
-        API_URL = f"https://router.huggingface.co/models/{model}"
-        print(f"🔄 Trying Model: {model}...")
+    
+    try:
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
         
-        try:
-            response = requests.post(API_URL, headers=headers, json=payload, timeout=40)
+        if response.status_code == 200:
+            return response.content
+        elif response.status_code == 503:
+            raise Exception("⏳ AI server is warming up. Please try again in 20 seconds.")
+        else:
+            raise Exception(f"❌ AI Error ({response.status_code}): {response.text}")
             
-            if response.status_code == 200:
-                print(f"✅ Success with {model}!")
-                return response.content
-            elif response.status_code == 503:
-                raise Exception(f"⏳ Model {model} is warming up. Click Generate again.")
-            else:
-                print(f"⚠️ Failed {model}: {response.status_code}")
-                last_error = f"Error {response.status_code} on {model}"
-                continue 
-                
-        except Exception as e:
-            print(f"⚠️ Error {model}: {str(e)}")
-            last_error = str(e)
-            continue
-
-    raise Exception(f"❌ All AI Models Failed. Last error: {last_error}")
+    except Exception as e:
+        raise Exception(f"⚠️ Connection Error: {str(e)}")
 
 # --- ROUTES ---
 @app.route('/')
@@ -148,7 +130,6 @@ def process():
         style = request.form.get('style')
         
         img_bytes = process_ai(file, style)
-        
         upload = cloudinary.uploader.upload(io.BytesIO(img_bytes), resource_type="image")
         
         if current_user.is_authenticated:
