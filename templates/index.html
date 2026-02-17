@@ -3,123 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StudioPro AI</title>
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <title>StudioPro AI - Logo Redesign</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-
-<div class="app-container">
-    <aside class="sidebar">
-        <div class="brand">✨ StudioPro</div>
-        {% if user %}
-        <div class="user-card">
-            <div class="u-info"><strong>{{ user.username }}</strong> {% if user.is_admin %}<span style="color:#f59e0b; font-size:10px;">ADMIN</span>{% endif %}</div>
-            <div class="u-wallet">💰 ₹<span id="walletBalance">{{ user.wallet }}</span></div>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="brand">✨ StudioPro</div>
+            <div class="user-card">
+                <p>Logged in as: <strong>{{ user.username if user else 'Guest' }}</strong></p>
+                <p>Wallet: <span id="wallet-amt">{{ user.wallet if user else '3 left' }}</span> Coins</p>
+            </div>
+            <nav>
+                <a href="#" class="nav-btn active">AI Designer</a>
+                <a href="#" class="nav-btn">My Projects</a>
+                {% if not user %}
+                <button class="nav-btn" onclick="showModal('login-modal')">Login / Register</button>
+                {% else %}
+                <a href="/logout" class="nav-btn">Logout</a>
+                {% endif %}
+            </nav>
         </div>
-        <nav>
-            <a href="#" class="nav-btn active">🎨 AI Designer</a>
-            <a href="#" onclick="openModal('historyModal')" class="nav-btn">📂 My Projects</a>
-            <a href="#" onclick="openModal('walletModal')" class="nav-btn">💳 Add Funds</a>
-            {% if user.is_admin %} <a href="#" onclick="loadAdmin()" class="nav-btn admin-btn">👑 Admin Panel</a> {% endif %}
-            <a href="/logout" class="nav-btn">🚪 Logout</a>
-        </nav>
-        {% else %}
-        <div style="text-align:center; padding:20px; color:#94a3b8;">
-            <p>Please login to save work.</p>
-            <button onclick="openModal('authModal')" class="btn-generate">Login / Signup</button>
-        </div>
-        {% endif %}
-    </aside>
 
-    <main class="main-content">
         <div class="workspace">
-            <div class="panel controls">
+            <div class="panel">
                 <h3>Configuration</h3>
-                <div class="upload-box" onclick="document.getElementById('fileInput').click()">
-                    <span id="uploadText">📤 Click to Upload Image</span>
-                    <input type="file" id="fileInput" hidden accept="image/*" onchange="previewImage(this)">
+                <div class="upload-box" onclick="document.getElementById('file-input').click()">
+                    <span id="upload-status">Click to Upload Logo</span>
+                    <input type="file" id="file-input" hidden accept="image/*" onchange="previewImage(event)">
                 </div>
+
                 <div class="style-grid">
-                    <label class="style-opt"><input type="radio" name="style" value="cartoon" checked><span>Cartoon</span></label>
-                    <label class="style-opt"><input type="radio" name="style" value="pencil"><span>Sketch</span></label>
-                    <label class="style-opt"><input type="radio" name="style" value="anime"><span>Anime</span></label>
-                    <label class="style-opt"><input type="radio" name="style" value="cyberpunk"><span>Cyberpunk</span></label>
+                    <label class="style-opt"><input type="radio" name="style" value="cartoon" checked hidden><span>Cartoon</span></label>
+                    <label class="style-opt"><input type="radio" name="style" value="pencil" hidden><span>Sketch</span></label>
+                    <label class="style-opt"><input type="radio" name="style" value="anime" hidden><span>Anime</span></label>
+                    <label class="style-opt"><input type="radio" name="style" value="cyberpunk" hidden><span>Cyberpunk</span></label>
                 </div>
-                <button class="btn-generate" onclick="generate()">✨ Generate Asset (10 Coins)</button>
+
+                <button class="btn-generate" id="gen-btn" onclick="generateLogo()">✨ Generate Asset (10 Coins)</button>
             </div>
 
-            <div class="panel viewer">
-                <div class="compare-wrapper">
-                    <span class="label-badge after">After</span>
-                    <div class="img-layer base"><img id="processedImg" src=""></div>
-                    
-                    <div class="img-layer overlay" id="overlayLayer">
-                        <span class="label-badge before">Before</span>
-                        <img id="originalImg" src="">
+            <div class="panel">
+                <div class="compare-wrapper" id="compare-container">
+                    <div class="img-layer">
+                        <span class="label-badge after">After</span>
+                        <img id="after-img" src="" alt="AI Output">
                     </div>
                     
-                    <div class="slider-handle" id="sliderHandle">↔</div>
-                    <input type="range" min="0" max="100" value="50" class="slider" oninput="moveSlider(this.value)">
+                    <div class="img-layer overlay" id="before-overlay">
+                        <span class="label-badge before">Before</span>
+                        <img id="before-img" src="" alt="Original Image">
+                    </div>
+
+                    <div class="slider-handle" id="handle">↔</div>
+                    <input type="range" min="0" max="100" value="50" class="slider" id="compare-slider">
                 </div>
             </div>
         </div>
-    </main>
-</div>
-
-<div id="historyModal" class="modal hidden">
-    <div class="modal-content wide">
-        <h3>📂 My Project History</h3>
-        {% if history %}
-        <div class="history-grid">
-            {% for item in history %}
-            <div class="history-item" onclick="loadHistory('{{ item.image_url }}')">
-                <img src="{{ item.image_url }}" alt="Art">
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p style="color:#94a3b8; margin:20px 0;">No images generated yet.</p>
-        {% endif %}
-        <button onclick="closeModal('historyModal')" class="close-btn">×</button>
     </div>
-</div>
 
-<div id="authModal" class="modal hidden">
-    <div class="auth-card">
-        <div class="auth-header"><h2>Welcome Back</h2></div>
-        <div class="auth-body">
-            <div class="input-group"><label>Username</label><input type="text" id="authUser"></div>
-            <div class="input-group"><label>Password</label><input type="password" id="authPass"></div>
-            <div class="auth-actions">
-                <button onclick="auth('login')" class="btn-login">Login</button>
-                <button onclick="auth('register')" class="btn-register">Register</button>
-            </div>
-            <button onclick="closeModal('authModal')" style="margin-top:10px; background:none; border:none; color:#64748b; width:100%;">Close</button>
-        </div>
-    </div>
-</div>
+    <script>
+        // 1. PREVIEW UPLOAD
+        function previewImage(event) {
+            const reader = new FileReader();
+            reader.onload = function() {
+                const output = document.getElementById('before-img');
+                output.src = reader.result;
+                document.getElementById('upload-status').innerText = "✅ Image Loaded";
+            };
+            reader.readAsDataURL(event.target.files[0]);
+        }
 
-<div id="walletModal" class="modal hidden">
-    <div class="modal-content">
-        <h3>💰 Add Funds</h3>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
-            <button onclick="pay(100)" class="btn-register">₹100</button>
-            <button onclick="pay(500)" class="btn-register">₹500</button>
-        </div>
-        <button onclick="closeModal('walletModal')" class="close-btn">×</button>
-    </div>
-</div>
+        // 2. SLIDER LOGIC
+        const slider = document.getElementById('compare-slider');
+        const overlay = document.getElementById('before-overlay');
+        const handle = document.getElementById('handle');
 
-<div id="adminModal" class="modal hidden">
-    <div class="modal-content wide">
-        <h3>👑 Admin Dashboard</h3>
-        <div id="adminData">Loading...</div>
-        <button onclick="closeModal('adminModal')" class="close-btn">×</button>
-    </div>
-</div>
+        slider.addEventListener('input', (e) => {
+            const val = e.target.value + "%";
+            overlay.style.width = val;
+            handle.style.left = val;
+        });
 
-<script src="{{ url_for('static', filename='script.js') }}"></script>
+        // 3. GENERATE LOGO
+        async function generateLogo() {
+            const file = document.getElementById('file-input').files[0];
+            const style = document.querySelector('input[name="style"]:checked').value;
+            const btn = document.getElementById('gen-btn');
+
+            if(!file) return alert("Please upload a logo first!");
+
+            btn.innerText = "⏳ Processing...";
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('style', style);
+
+            try {
+                const res = await fetch('/process', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if(data.image) {
+                    document.getElementById('after-img').src = data.image;
+                    document.getElementById('wallet-amt').innerText = data.wallet;
+                    btn.innerText = "✨ Generate Asset (10 Coins)";
+                } else {
+                    alert(data.error);
+                }
+            } catch (err) {
+                alert("Connection Error. Try again.");
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
 </body>
 </html>
