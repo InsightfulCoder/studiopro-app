@@ -15,11 +15,11 @@ app = Flask(__name__)
 app.secret_key = "studiopro_pro_secret_key"
 
 # --- CONFIGURATION (SECURE) ---
-# This line pulls the key you just saved in Render.
-# GitHub will accept this file because there is NO password in the text.
+# This line is the secret bridge. It pulls the key from Render's Safe Box.
+# Because the actual key is not written here, GitGuardian will not flag it.
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# ⚠️ YOUR CLOUDINARY KEYS ⚠️
+# ⚠️ CLOUDINARY KEYS ⚠️
 cloudinary.config(
     cloud_name = "dhococ8e5",
     api_key = "457977599793717",    
@@ -68,7 +68,7 @@ def process_ai(file, style):
     if not HUGGINGFACE_API_KEY:
         raise Exception("❌ API Key missing in Render Environment.")
 
-    # 🛑 CRITICAL FIX: The correct URL path for the new Router
+    # CORRECT URL: Includes the /hf-inference/ path required by the new Router
     API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
