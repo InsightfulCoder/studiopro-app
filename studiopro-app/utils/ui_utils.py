@@ -28,10 +28,19 @@ def inject_custom_css():
             color: #000000 !important;
         }
 
-        /* Force input text color to be black for better visibility while typing */
-        .auth-container input {
+        /* Robust Black Text Fix for Auth Inputs */
+        .auth-container [data-testid="stTextInput"] input {
             color: #000000 !important;
             -webkit-text-fill-color: #000000 !important;
+            background-color: #f8fafc !important;
+        }
+        
+        .auth-container [data-testid="stTextInput"] label p {
+            color: #000000 !important;
+        }
+
+        .auth-container [data-testid="stCheckbox"] label p {
+            color: #000000 !important;
         }
 
         /* Glassmorphism Container */

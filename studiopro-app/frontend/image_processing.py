@@ -6,7 +6,24 @@ from utils.image_utils import cartoonify_classic, pencil_sketch, pencil_color
 from utils.ui_utils import section_header
 
 def image_processing_page():
+    # Progress check for guests
+    is_guest = st.session_state.user is None
+    trial_limit = 3
+    
+    if is_guest and st.session_state.guest_trials >= trial_limit:
+        st.warning("🚀 Guest trial limit reached (3/3). Please log in to continue processing and unlocking premium features!")
+        col1, col2 = st.columns(2)
+        if col1.button("Sign In"):
+            st.session_state.page = "login"
+            st.rerun()
+        if col2.button("Register"):
+            st.session_state.page = "registration"
+            st.rerun()
+        return
+
     section_header("Artistic Studio", "Transform your image into a masterpiece")
+    if is_guest:
+        st.info(f"✨ Guest Mode: {st.session_state.guest_trials}/{trial_limit} free trials remaining. [Login](javascript:void(0)) to save history forever!")
 
     # 1. File Upload with better visual
     uploaded_file = st.file_uploader("Upload Image (JPG, PNG)", type=["jpg", "jpeg", "png"])
@@ -71,6 +88,7 @@ def image_processing_page():
 
 def process_and_redirect(style):
     with st.spinner("Saving your progress..."):
+        # Save temporary files for the session
         output_dir = "assets/outputs"
         os.makedirs(output_dir, exist_ok=True)
         file_id = uuid.uuid4().hex[:8]
@@ -80,22 +98,29 @@ def process_and_redirect(style):
         st.session_state.original_image.save(orig_path)
         st.session_state.processed_image.save(proc_path)
         
-        from backend.transactions import log_image_history, get_trial_status
-        log_image_history(st.session_state.user['user_id'], orig_path, proc_path, style)
-        
         st.session_state.output_paths = {
             "original": orig_path,
             "processed": proc_path,
             "style": style
         }
-        
-        is_eligible, remaining = get_trial_status(st.session_state.user['user_id'])
-        if is_eligible:
-            st.session_state.page = "download"
-            st.success(f"Free trial applied! {remaining} trials remaining.")
+
+        if st.session_state.user:
+            from backend.transactions import log_image_history, get_trial_status
+            log_image_history(st.session_state.user['user_id'], orig_path, proc_path, style)
+            
+            is_eligible, remaining = get_trial_status(st.session_state.user['user_id'])
+            if is_eligible:
+                st.session_state.page = "download"
+                st.success(f"Free trial applied! {remaining} trials remaining.")
+            else:
+                st.session_state.page = "payment"
+                st.success("Image history logged! Redirecting to payment...")
         else:
-            st.session_state.page = "payment"
-            st.success("Image history logged! Redirecting to payment...")
+            # Guest bypass for first 3
+            st.session_state.guest_trials += 1
+            st.session_state.page = "download"
+            st.success(f"Guest trial applied! {3 - st.session_state.guest_trials} remaining.")
+            
         st.rerun()
 
 if __name__ == "__main__":
