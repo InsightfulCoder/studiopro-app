@@ -1,12 +1,13 @@
+import streamlit as st
 from frontend.registration import registration_page
 from frontend.login import login_page
 from frontend.dashboard import dashboard_page
 from frontend.payment import payment_page
 from frontend.download import download_page
-
-
+from utils.ui_utils import inject_custom_css
 
 st.set_page_config(page_title="StudioPro AI - Cartoonizer", page_icon="✨", layout="wide")
+inject_custom_css()
 
 # Initialize session state for navigation and user
 if 'page' not in st.session_state:

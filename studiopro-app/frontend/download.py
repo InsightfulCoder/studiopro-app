@@ -1,44 +1,46 @@
 import streamlit as st
 import os
+from utils.ui_utils import section_header
 
 def download_page():
-    st.title("✅ Your HD Cartoonized Logo")
-    st.success("Payment confirmed! Your image is ready for download.")
+    section_header("Download Ready", "Your masterpiece is ready for the world")
     
     if 'output_paths' not in st.session_state:
-        st.error("No image found. Please restart the process.")
-        if st.button("Back to Dashboard"):
-            st.session_state.page = "dashboard"
-            st.rerun()
+        st.error("No image found.")
+        st.session_state.page = "dashboard"
+        st.rerun()
         return
 
     processed_path = st.session_state.output_paths['processed']
     
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 1])
     with col1:
-        st.image(processed_path, caption="Final Cartoonized Version", use_container_width=True)
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.image(processed_path, use_container_width=True, caption="Final Render")
+        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.subheader("📥 Download Links")
+        st.markdown('<div class="glass-card" style="height: 100%;">', unsafe_allow_html=True)
+        st.subheader("📥 Your Assets")
         st.write("---")
         
         with open(processed_path, "rb") as file:
-            btn = st.download_button(
-                    label="Download high-resolution image",
+            st.download_button(
+                    label="Download High-Res PNG",
                     data=file,
                     file_name="cartoonized_logo.png",
                     mime="image/png"
                 )
         
         st.write("---")
-        st.info("You can also find this image in your profile history.")
+        st.success("Transaction verified. Thank you for using StudioPro AI!")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.button("Finish & Return to Dashboard"):
-        # Cleanup session for next process
-        del st.session_state.original_image
-        del st.session_state.processed_image
-        del st.session_state.output_paths
-        if 'razorpay_order' in st.session_state:
-            del st.session_state.razorpay_order
+    if st.button("Finish & Return Home"):
+        # Cleanup
+        keys_to_del = ['original_image', 'processed_image', 'output_paths', 'razorpay_order', 'current_style']
+        for k in keys_to_del:
+            if k in st.session_state:
+                del st.session_state[k]
         st.session_state.page = "dashboard"
         st.rerun()
