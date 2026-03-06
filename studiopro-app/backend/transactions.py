@@ -57,3 +57,16 @@ def update_payment_status(order_id, status):
         return False
     finally:
         conn.close()
+
+def get_trial_status(user_id):
+    """Returns (is_eligible, count_remaining)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM image_history WHERE user_id = ?", (user_id,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    
+    limit = 3
+    is_eligible = count < limit
+    remaining = max(0, limit - count)
+    return is_eligible, remaining

@@ -28,6 +28,12 @@ def inject_custom_css():
             color: #000000 !important;
         }
 
+        /* Force input text color to be black for better visibility while typing */
+        .auth-container input {
+            color: #000000 !important;
+            -webkit-text-fill-color: #000000 !important;
+        }
+
         /* Glassmorphism Container */
         .glass-card {
             background: rgba(255, 255, 255, 0.05);
