@@ -19,6 +19,15 @@ def inject_custom_css():
             letter-spacing: -0.5px;
         }
 
+        /* Auth Page Specific (Dark Text) */
+        .auth-container p, .auth-container label, .auth-container span, .auth-container div {
+            color: #000000 !important;
+        }
+        
+        .auth-container h2 {
+            color: #000000 !important;
+        }
+
         /* Glassmorphism Container */
         .glass-card {
             background: rgba(255, 255, 255, 0.05);
@@ -28,6 +37,15 @@ def inject_custom_css():
             border-radius: 12px;
             padding: 24px;
             margin-bottom: 20px;
+        }
+        
+        /* Auth Card (Light background for black text) */
+        .auth-card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
         }
 
         /* Modern Button Styling */

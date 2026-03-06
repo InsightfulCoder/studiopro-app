@@ -11,7 +11,8 @@ def login_page():
     col_l, col_m, col_r = st.columns([1, 1.2, 1])
     
     with col_m:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="auth-container">', unsafe_allow_html=True)
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
         section_header("Welcome Back", "Please sign in to continue")
         
         with st.form("login_form"):
@@ -33,9 +34,11 @@ def login_page():
                         st.error(result)
         
         st.markdown("</div>", unsafe_allow_html=True)
+        
         if st.button("New here? Create Account"):
             st.session_state.page = "registration"
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     login_page()

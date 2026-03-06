@@ -80,7 +80,7 @@ def process_and_redirect(style):
         st.session_state.original_image.save(orig_path)
         st.session_state.processed_image.save(proc_path)
         
-        from backend.transactions import log_image_history
+        from backend.transactions import log_image_history, get_trial_status
         log_image_history(st.session_state.user['user_id'], orig_path, proc_path, style)
         
         st.session_state.output_paths = {
@@ -88,7 +88,14 @@ def process_and_redirect(style):
             "processed": proc_path,
             "style": style
         }
-        st.session_state.page = "payment"
+        
+        is_eligible, remaining = get_trial_status(st.session_state.user['user_id'])
+        if is_eligible:
+            st.session_state.page = "download"
+            st.success(f"Free trial applied! {remaining} trials remaining.")
+        else:
+            st.session_state.page = "payment"
+            st.success("Image history logged! Redirecting to payment...")
         st.rerun()
 
 if __name__ == "__main__":

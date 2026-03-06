@@ -19,22 +19,26 @@ def dashboard_page():
     if app_mode == "Overview":
         section_header("Dashboard Overview", "Monitor your creative activity")
         
+        from backend.transactions import get_trial_status
+        is_eligible, remaining = get_trial_status(user['user_id'])
+        
         # Stats Cards in Glassmorphism style
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.metric("Total Edits", "12")
+            st.metric("Free Trials Left", f"{remaining}")
             st.markdown('</div>', unsafe_allow_html=True)
             
         with col2:
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.metric("Images Processed", "5")
+            # You could query total images here too
+            st.metric("Images Processed", "5") 
             st.markdown('</div>', unsafe_allow_html=True)
             
         with col3:
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.metric("Plan", "Pro")
+            st.metric("Plan", "Free" if is_eligible else "Pro")
             st.markdown('</div>', unsafe_allow_html=True)
             
         st.write("---")

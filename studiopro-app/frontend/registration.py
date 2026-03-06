@@ -12,7 +12,8 @@ def registration_page():
     col_l, col_m, col_r = st.columns([1, 1.5, 1])
     
     with col_m:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="auth-container">', unsafe_allow_html=True)
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
         section_header("Create Account", "Join the StudioPro AI community")
         
         with st.form("registration_form"):
@@ -43,9 +44,11 @@ def registration_page():
                         st.error(message)
         
         st.markdown("</div>", unsafe_allow_html=True)
+        
         if st.button("Have an account? Go to Login"):
             st.session_state.page = "login"
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     registration_page()
