@@ -1,8 +1,0 @@
-streamlit
-opencv-python-headless
-pillow
-bcrypt
-razorpay
-pandas
-numpy
-sqlite3
